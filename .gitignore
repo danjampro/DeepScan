@@ -12,3 +12,6 @@
 
 #Build stuff
 /build/
+
+#fits files 
+*.fits

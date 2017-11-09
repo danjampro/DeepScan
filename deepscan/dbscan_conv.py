@@ -14,7 +14,7 @@ from astropy.convolution import Tophat2DKernel
 from functools import partial
 from scipy.ndimage.measurements import label, find_objects
 from scipy.ndimage.morphology import binary_dilation
-from . import geometry
+from . import geometry, BUFFSIZE
 import time
 
 #==============================================================================
@@ -300,6 +300,10 @@ def dbscan_conv(data, thresh, eps, mpts, Nthreads=1,
                                          minCsize=5,
                                          dist_labeling=False,
                                          memmap_thresh=False):
+    
+    if meshsize is None:
+        meshsize = BUFFSIZE
+    
     #Do some argument checking
     if Nthreads < 1:
         raise ValueError('Nthreads<1.')
@@ -355,7 +359,7 @@ def dbscan_conv(data, thresh, eps, mpts, Nthreads=1,
     pool = None                                               
     try:
                
-        print('Creating memmaps...')
+        #print('Creating memmaps...')
         
         if memmap_thresh:
             #Create a memory map for the thresholded image
@@ -403,7 +407,7 @@ def dbscan_conv(data, thresh, eps, mpts, Nthreads=1,
                         for i in range(xmins.size) for j in range(ymins.size)]
 
         
-        print('Convolving...')
+        #print('Convolving...')
                 
         #Create a function to perform the convoluton
         pfunc = partial(perform_convolution, kernel=kernel_conv,
@@ -425,7 +429,9 @@ def dbscan_conv(data, thresh, eps, mpts, Nthreads=1,
         conv_memmap2 = (conv_memmap2 >= 1).astype('int')#minCsize
  
         
-        print('Labeling...')
+        #print('Labeling...')
+        
+        
         if dist_labeling:
             
             raise ValueError('dis_labeling is currently inoperational')
@@ -461,7 +467,7 @@ def dbscan_conv(data, thresh, eps, mpts, Nthreads=1,
                     cutout[cutout.imag!=0] += total*1j
                     total += np.max(cutout.imag)
     
-            print('Stitching...')
+            #print('Stitching...')
             
             #Perform stitching & get slice        
             clusters, slices, labels = stitch(label_memmap, thresh_memmap*conv_memmap)
@@ -481,13 +487,13 @@ def dbscan_conv(data, thresh, eps, mpts, Nthreads=1,
             if uids_[0]==0:  #Remove 0 for cluster IDs
                 uids_ = uids_[1:]
                 
-            print('%i Unique clusters (1)' % uids_.size)
+            #print('%i Unique clusters (1)' % uids_.size)
                     
             #Remove clusters that are too small
             slices_clus = [s for s in find_objects(clusters) if s is not None]
             clens = [np.sum(clusters[s]==cid) for cid, s in zip(uids_, slices_clus)]
             
-            print(len([c for c in clens if c==0]))
+            #print(len([c for c in clens if c==0]))
             
             uids = np.array([u for i, u in enumerate(uids_) if clens[i]>=minCsize])  
             #Delete the clusters than were eliminated
@@ -497,12 +503,12 @@ def dbscan_conv(data, thresh, eps, mpts, Nthreads=1,
                         clusters[s][clusters[s]==(i+1)]=0
             Nclusters = uids.size
             
-            print('%i Unique clusters (2)' % uids.size)
+            #print('%i Unique clusters (2)' % uids.size)
                                 
             #Check if there are any non-continuities in the labeling
             if (uids[-1] != Nlabels) or (Nlabels!=uids.size):
                 
-                print('hello1')
+                #print('hello1')
                 
                 #Select label_ids to keep
                 label_ids = np.arange(1,Nlabels+1)
@@ -519,7 +525,7 @@ def dbscan_conv(data, thresh, eps, mpts, Nthreads=1,
                 ids_to_replace = label_ids[Nclusters:][label_slices_keep[Nclusters:]]
 
                 
-                print(ids_to_replace.size,len(ids_to_fill))
+                #print(ids_to_replace.size,len(ids_to_fill))
                 #assert(ids_to_replace.size == len(ids_to_fill))
                 
                 for i, id_fill in enumerate(ids_to_fill):
@@ -536,7 +542,7 @@ def dbscan_conv(data, thresh, eps, mpts, Nthreads=1,
                 slices = slices_labeled[:Nclusters]
                 
             else:
-                print('hello2')
+                #print('hello2')
                 slices = slices_labeled
             
             
@@ -546,7 +552,7 @@ def dbscan_conv(data, thresh, eps, mpts, Nthreads=1,
             sources.append( Source( i+1, slice_) )
         
         
-        print('Finishing')
+        #print('Finishing')
         #Remove the memmaps from memory
         del thresh_memmap
         del conv_memmap

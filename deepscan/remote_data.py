@@ -13,7 +13,9 @@ def get(url):
     
     '''Download XXX.fits.gz file and read in memory'''
     
-    with tempfile.mkdtemp() as tdir:
+    tdir = tempfile.mkdtemp() 
+    
+    try:
         
         fname_gz = os.path.join(tdir, 'ngvs_small.fits.gz')
         fname = os.path.join(tdir, 'ngvs_small.fits')
@@ -22,6 +24,9 @@ def get(url):
         with gzip.open(fname_gz, 'rb') as f_in, open(fname, 'wb') as f_out:
             shutil.copyfileobj(f_in, f_out)
             
-        data = utils.read_filts(fname)
+        data = utils.read_fits(fname)
+        
+    finally:
+        shutil.rmtree(tdir)
         
     return data

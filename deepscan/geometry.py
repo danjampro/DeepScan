@@ -38,7 +38,42 @@ class box():
         
     def check_inside(self, x, y):
         return (x < self.xmax) * (x >= self.xmin) * (y < self.ymax) * (y >= self.ymin)
+  
     
+#==============================================================================
+'''
+class rectangle():
+    
+    def __init__(self, x0, y0, theta, width, height):
+        self.x0 = x0
+        self.y0 = y0
+        self.theta = theta
+        self.width = width
+        self.height = height
+        self.slc = (slice(int(np.floor(-0.5*height*np.sin(theta)+y0)),
+                          int(np.ceil(0.5*height*np.sin(theta)+y0))),
+                    slice(int(np.floor(-0.5*width*np.cos(theta)+x0)),
+                          int(np.ceil(0.5*width*np.cos(theta)+x0))))
+        self.m1a = 
+        
+    def fill(self, data, fillval=1):
+        cond = np.zeros((self.slc[0].stop-self.slc[0].start,
+                         self.slc[1].stop-self.slc[1].start), dtype='bool')
+        
+        data[self.ymin:self.ymax,self.xmin:self.xmax] = fillval
+        return data
+    
+    def draw(self, ax=None):
+        if ax is None:
+            ax = plt.gca()
+        ax.plot([self.xmin, self.xmax], [self.ymin, self.ymin], 'b-')
+        ax.plot([self.xmin, self.xmax], [self.ymax, self.ymax], 'b-')
+        ax.plot([self.xmin, self.xmin], [self.ymin, self.ymax], 'b-')
+        ax.plot([self.xmax, self.xmax], [self.ymin, self.ymax], 'b-')
+        
+    def check_inside(self, x, y):
+        return (x < self.xmax) * (x >= self.xmin) * (y < self.ymax) * (y >= self.ymin)
+'''
 #==============================================================================
 
 class ellipse():
@@ -63,11 +98,17 @@ class ellipse():
         y = y - self.y0
         
         #Rotate ellipse to have semi-major axis aligned with y-axis
-        y2 = x*np.cos(-self.theta) - y*np.sin(-self.theta)
-        x2 = y*np.cos(-self.theta) + x*np.sin(-self.theta)
+        #y2 = x*np.cos(-self.theta) - y*np.sin(-self.theta)
+        #x2 = y*np.cos(-self.theta) + x*np.sin(-self.theta)
+        
+        y2 = x*np.cos(-self.theta) - y*np.sin(-self.theta) 
+        x2 = y*np.cos(-self.theta) + x*np.sin(-self.theta) 
                
-        A = ( x2/self.b )**2 
-        B = ( y2/self.a )**2 
+        #A = ( x2/self.b )**2 
+        #B = ( y2/self.a )**2 
+        
+        A = ( y2/self.b )**2 
+        B = ( x2/self.a )**2 
             
         return (A + B) <= 1
         
@@ -82,8 +123,11 @@ class ellipse():
         x = self.a * np.cos(phi) 
         y = self.b * np.sin(phi)
                 
-        x2 = x*np.cos(self.theta) - y*np.sin(self.theta) + self.x0
-        y2 = y*np.cos(self.theta) + x*np.sin(self.theta) + self.y0
+        #x2 = x*np.cos(self.theta) - y*np.sin(self.theta) + self.x0
+        #y2 = y*np.cos(self.theta) + x*np.sin(self.theta) + self.y0
+        
+        y2 = x*np.cos(-self.theta) - y*np.sin(-self.theta) + self.y0
+        x2 = y*np.cos(-self.theta) + x*np.sin(-self.theta) + self.x0
         
         ax.plot(x2, y2, **kwargs)
         

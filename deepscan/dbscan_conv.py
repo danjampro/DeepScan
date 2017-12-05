@@ -13,7 +13,6 @@ from scipy.signal import fftconvolve
 from astropy.convolution import Tophat2DKernel
 from functools import partial
 from scipy.ndimage.measurements import label, find_objects
-from scipy.ndimage.morphology import binary_dilation
 from . import geometry, BUFFSIZE
 import time
 
@@ -36,7 +35,7 @@ def fit_ellipse(xs,ys,weights=None,rms=False):
         y2 += 1./12
     
     #Calculate position angle
-    theta = np.sign(xy) * 0.5*abs( np.arctan2(2*xy, x2-y2) )
+    theta = np.sign(xy) * 0.5*abs( np.arctan2(2*xy, x2-y2) ) + np.pi/2
     
     #Calculate the semimajor & minor axes
     c1 = 0.5*(x2+y2)
@@ -63,29 +62,34 @@ class Source():
         self.Is = None
         self.cslice = cslice
         self.label = label
-    def get_crds(self,clusters):
+    def get_crds(self,clusters, mask=None):
         if ((self.xs is None)*(self.ys is None)):
             xs, ys = np.meshgrid(np.arange(self.cslice[1].start,self.cslice[1].stop),
                                  np.arange(self.cslice[0].start,self.cslice[0].stop))
             cond = clusters[self.cslice]==self.label
+            
+            #Mask condition
+            if mask is not None:
+                cond *= mask[self.cslice] == 0
+            
             self.xs = xs[cond]
             self.ys = ys[cond]
         return self.xs, self.ys
-    def get_data(self, data, clusters):
-        xs, ys = self.get_crds(clusters)
+    def get_data(self, data, clusters, mask=None):
+        xs, ys = self.get_crds(clusters, mask=mask)
         if self.Is is None:
             self.Is = data[ys, xs]
         return self.Is
-    def get_ellipse_max(self, clusters):
-        xs, ys = self.get_crds(clusters)
+    def get_ellipse_max(self, clusters, mask=None):
+        xs, ys = self.get_crds(clusters, mask=mask)
         self.ellipse_max=fit_ellipse(xs,ys,weights=None,rms=False)
         return self.ellipse_max
-    def get_ellipse_rms(self):
-        xs, ys = self.get_crds(clusters)
+    def get_ellipse_rms(self, mask=None):
+        xs, ys = self.get_crds(clusters, mask=mask)
         self.ellipse_rms=fit_ellipse(self.xs,self.ys,weights=None,rms=True)
         return self.ellipse_rms
-    def get_ellipse_rms_weighted(self, clusters, data):
-        Is = self.get_data(data, clusters) #xs & ys are set in get_data
+    def get_ellipse_rms_weighted(self, clusters, data, mask=None):
+        Is = self.get_data(data, clusters, mask=mask) #xs & ys are set in get_data
         self.ellipse_max_weighted=fit_ellipse(self.xs,self.ys,weights=Is,rms=True)
         return self.ellipse_max_weighted
 

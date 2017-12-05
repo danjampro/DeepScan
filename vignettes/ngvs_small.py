@@ -24,7 +24,7 @@ print('Done.')
 
 #==============================================================================
 
-ps = 0.187
+ps = 0.186
 mzero = 30
 
 #Measure the sky
@@ -49,7 +49,8 @@ clusters, areas, sources = dbscan.dbscan_conv.dbscan_conv(eps=eps/ps,
                                             rms=rms,
                                             data=masked,
                                             thresh=thresh,
-                                            mpts=mpts)  #Parallel by default
+                                            mpts=mpts,
+                                            Nthreads=4)  #Parallel by default
                                                           
                                                           
 plt.figure(figsize=(12,4))
@@ -67,7 +68,11 @@ plt.imshow(np.arcsinh(data), cmap='binary')
 area_bin = (areas!=0).astype('int')
 plt.contour(area_bin, colors='lawngreen')   
 
-                         
-                                            
 
+
+es = [s.get_ellipse_max(clusters) for s in sources]
+
+                                            
+plt.figure(); plt.imshow(clusters!=0, cmap='binary')
+[e.draw(color='lawngreen') for e in es]
 

@@ -7,7 +7,7 @@ Created on Mon Dec  4 14:48:49 2017
 """
 
 import numpy as np
-from . import geometry
+from . import geometry, SB
 
 def fit_ellipse(xs,ys,weights=None,rms=False):
     
@@ -76,8 +76,8 @@ class Source():
             self.Is = data[ys, xs]
         return self.Is
     
-    def get_ellipse_max(self, clusters, mask=None):
-        xs, ys = self.get_crds(clusters, mask=mask)
+    def get_ellipse_max(self, segmap, mask=None):
+        xs, ys = self.get_crds(segmap, mask=mask)
         self.ellipse_max=fit_ellipse(xs,ys,weights=None,rms=False)
         return self.ellipse_max
     
@@ -86,10 +86,81 @@ class Source():
         self.ellipse_rms=fit_ellipse(self.xs,self.ys,weights=None,rms=True)
         return self.ellipse_rms
     
-    def get_ellipse_rms_weighted(self, clusters, data, mask=None):
-        Is = self.get_data(data, clusters, mask=mask) #xs & ys are set in get_data
+    def get_ellipse_rms_weighted(self, data, segmap, mask=None):
+        Is = self.get_data(data, segmap, mask=mask) #xs & ys are set in get_data
         self.ellipse_max_weighted=fit_ellipse(self.xs,self.ys,weights=Is,rms=True)
         return self.ellipse_max_weighted
+    
+    
+    
+    def fit_1Dsersic(self, data, segmap, uiso, ps, mzero, dr=5, Rmax=250, mask=None, **kwargs):
+        
+        from scipy.optimize import curve_fit
+        from . import sersic
+        
+        #Get weighted ellipse
+        e_weight = self.get_ellipse_rms_weighted(data, segmap, **kwargs)
+        
+        #Get data cutout
+        cutout = data[int(e_weight.y0-Rmax):int(e_weight.y0+Rmax),
+                      int(e_weight.x0-Rmax):int(e_weight.x0+Rmax)]
+        
+        #Get mask cutout
+        if mask is not None:
+            mask_crp = mask[int(e_weight.y0-Rmax):int(e_weight.y0+Rmax),
+                          int(e_weight.x0-Rmax):int(e_weight.x0+Rmax)]
+        else:
+            mask_crp = False
+        
+        #Define coordinate grid
+        xx, yy = np.meshgrid(np.arange(cutout.shape[1])-Rmax, np.arange(cutout.shape[0])-Rmax)
+        x0 = Rmax; y0=Rmax
+        
+        r = 0
+        Icrit = SB.SB2Counts(uiso, ps, mzero)
+        Is = []
+        dIs = []
+        rs = []
+        while True:
+            
+            #Get inside ellipse condition
+            e1 = geometry.ellipse(x0=x0, y0=y0, a=r, b=r*e_weight.q, theta=e_weight.theta)
+            e2 = geometry.ellipse(x0=x0, y0=y0, a=r+dr, b=(r+dr)*e_weight.q, theta=e_weight.theta)
+        
+            inside = e2.check_inside(xx,yy) * ~e1.check_inside(xx,yy) * ~mask_crp
+            
+            I = np.median(cutout[inside])
+            dI = np.std(cutout[inside]) / np.sqrt(inside.sum())
+            
+            if np.isfinite(I) * (inside.sum() > 2):
+                Is.append(I)
+                dIs.append(dI)
+                rs.append(0.5*(2*r + dr))
+                
+                #Break condition
+                if I <= Icrit:
+                    break
+            #Increase the radius    
+            r += dr
+    
+            #Max radius condition
+            if r >= Rmax:
+                break
+        
+        try:
+            popt, pcov = curve_fit(sersic.profile, xdata=rs, ydata=Is, sigma=dIs)
+            return popt
+        except:
+            return None
+            
+        
+            
+        
+        
+        
+        
+        
+        
     
     
     def display(self, data, ax=None, mapping=np.arcsinh, **kwargs):

@@ -7,7 +7,7 @@ Created on Wed Oct 18 18:02:27 2017
 
 """
 
-import os, tempfile, multiprocessing, shutil
+import os, tempfile, multiprocessing, shutil, time
 import numpy as np
 from scipy.signal import fftconvolve
 from scipy.ndimage.measurements import label, find_objects
@@ -15,7 +15,7 @@ from scipy.ndimage.morphology import binary_erosion
 from astropy.convolution import Tophat2DKernel
 from functools import partial
 from . import minpts, source, NTHREADS, BUFFSIZE
-import time
+from joblib import Parallel, delayed
 
 
 #==============================================================================
@@ -101,7 +101,24 @@ def label_chunk(xmin, xmax, ymin, ymax, multiplier, dshape, overlap, mpts):
 
 
 
-def erode_segmap(segmap, kernel):
+def _erode_regions(data, output, slices, kernel):
+    '''
+    Perform binary errosion on slices.
+    
+    Parameters
+    ----------
+    
+    Returns
+    -------
+    
+    '''
+    for slc in slices:
+        
+        cutout = data[slc]
+        
+        output[slc] = binary_erosion(cutout, kernel)
+        
+def erode_segmap(segmap, slices, kernel, directory, Nthreads=NTHREADS):
     '''
     Perform binary errosion on the segmap.
     
@@ -112,10 +129,22 @@ def erode_segmap(segmap, kernel):
     -------
     
     '''
-    binary = binary_erosion(segmap, kernel)
-    segmap, _ = label(binary)
-    return segmap
+    #Do calculations for parallelisation
+    n = int(len(slices)/Nthreads) + 1
+    chunks = [slices[i:i + n] for i in range(0, len(slices), n)]
+    
+    #Pre-allocate a writeable shared memory map as a container for the
+    #results of the parallel computation
+    segmap2 = np.memmap(os.path.join(directory, 'segmap2.dat'), dtype='int',
+                     shape=segmap.shape, mode='w+')
+    
+    #Do the dilation
+    Parallel(n_jobs=Nthreads)( delayed(_erode_regions)(segmap, segmap2,
+             chunk, kernel) for chunk in chunks)
+            
+    return label(segmap2)[0]
                     
+
 
 def init(l, thresh_memmap, conv_memmap, conv_memmap2):
     global lock, threshed, conv, labeled, conv2
@@ -131,6 +160,7 @@ def dbscan_conv(data, thresh, eps, mpts, Nthreads=NTHREADS,
                                          erode=True,
                                          memmap_thresh=False,
                                          verbose=True):
+                                         
     if meshsize is None:
         meshsize = BUFFSIZE
     
@@ -237,7 +267,8 @@ def dbscan_conv(data, thresh, eps, mpts, Nthreads=NTHREADS,
                 
         #Get cluster regions
         conv_memmap2 = (conv_memmap2 >= 1).astype('int')#minCsize
-            
+        
+        
         if verbose: print('-labeling...')
         
         #Do the labeling on one processor
@@ -311,9 +342,10 @@ def dbscan_conv(data, thresh, eps, mpts, Nthreads=NTHREADS,
             if erode:
                 if verbose: print('-eroding...')
                 #Erode the clusters to represent the core point distribution only
-                segmap = erode_segmap(labeled, kernel_conv)
-            
-     
+                segmap = erode_segmap(labeled, slices, kernel_conv,
+                                      directory=temppath, Nthreads=NTHREADS)
+                
+        
         else:  #If no detections
             if verbose: print('-no sources detected.')
             sources = []
@@ -348,6 +380,7 @@ class Clustered():
         self.segmap = segmap
         self.sources = sources
         self.segmap_dilate = segmap_dilate
+        #self.mask = mask
         self.Nobjs = len(sources)
 
 #==============================================================================
@@ -372,7 +405,8 @@ def dbscan(data, eps, kappa, thresh, rms, ps, verbose=True, **kwargs):
     
     if verbose: print('dbscan: performing clustering...')
     
-    clusters, segmap, segmap_dilate, sources = dbscan_conv(data, thresh, eps, mpts,
+    clusters, segmap, segmap_dilate, sources = dbscan_conv(data, thresh,
+                                                           eps, mpts,
                                              verbose=verbose, **kwargs)
     
     t1 = time.time() - t0

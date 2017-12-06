@@ -11,6 +11,7 @@ import time
 from deepscan import geometry, convolution, Smask, NTHREADS
 import numpy as np
 from scipy.ndimage.measurements import label, maximum_position
+from joblib import Parallel, delayed
 
 
 
@@ -91,18 +92,14 @@ def measure_average_flux(data, x0, y0, r0, dr, mask=None, estimator=np.median):
     
 
 
-from joblib import Parallel, delayed
 def _fit_apertures(data, Icrit, Rmax, dr, mps, mask=None):
     
     apertures = []
     
     #Loop over objects in chunk
     for mp in mps:
-    
         mp = int(mp[0]), int(mp[1])
-        
-        print(mp)
-        
+                
         #Set up while loop
         i=0
         while True:
@@ -148,8 +145,6 @@ def fit_apertures(data, Icrit, Nobjs, labeled, convolved=None, mask=None, dr=5, 
         
     if convolved is None:
         convolved = data
-        
-    print('starting')
     
     #Find location of maximum in convolved image
     #This helps find the true centre of the saturated regions
@@ -170,47 +165,11 @@ def fit_apertures(data, Icrit, Nobjs, labeled, convolved=None, mask=None, dr=5, 
             for chunk in chunks)
     
     #Flatten list
-    apertures = [item for sublist in apertures for item in sublist]
-
-    """
-    #Loop over saturated regions
-    for l in range(1,Nobjs+1):
-        
-        print(l)
-    
-        #Find location of maximum in convolved image
-        #This helps find the true centre of the saturated regions
-        mp =  maximum_position(convolved, labels=labeled, index=l)
-        mp = int(mp[0]), int(mp[1])
-        
-        #Set up while loop
-        sbs = []
-        rs = []
-        i=0
-        while True:
-            
-            #Save the radius
-            rs.append( (i+1)*dr )
-                    
-            #Measure the average SB within annulus
-            sbs.append( measure_average_flux(data, mp[1], mp[0], i*dr, dr, mask=mask) )
-            
-            #If average SB is below threshold then break and save ellipse
-            if sbs[i] < Icrit: 
-                apertures[l-1] = geometry.ellipse(x0=mp[1],y0=mp[0],a=(i+1)*dr,b=(i+1)*dr)
-                break
-            
-            #Break the loop if maximum radius is reached
-            elif rs[i] >= Rmax:
-                apertures[l-1]=geometry.ellipse(x0=mp[1],y0=mp[0],a=Rmax,b=Rmax)
-                print('WARNING: starmask aperture %i has reached maximum size' % (l-1))
-                break
-            
-            #Update counter
-            i+=1
-    """
-            
-    return apertures
+    apertures_ = []
+    for aps in apertures:
+        apertures_.extend(aps)
+     
+    return apertures_
         
 
 

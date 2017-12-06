@@ -11,24 +11,19 @@ from scipy.special import gamma, gammainc, gammaincinv
 from scipy.optimize import minimize
 
 
-def _Sersic_b(b, n):
+def profile(r, Ie, re, n):
+    '''
+    Evaluate the Sersic profile at r
     
-    '''Minimise this function to find b.    
+    Paramters
+    ---------
     
-    Parameters
-    ----------
-    b : float
-        b value to evaluate.
-    n : float
-        Sersic index.
-
     Returns
     -------
-    float:
-        Number to be minimised.
-    '''
     
-    return abs( gamma(2*n) * (1 - (2*gammainc(2*n, b))) )
+    '''
+    b = sersic_b(n)
+    return Ie * np.e**( -b * ((r/re)**(1./n)-1) )
 
 
 

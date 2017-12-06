@@ -7,7 +7,7 @@ Created on Thu Nov  9 12:06:57 2017
 """
 
 import numpy as np
-from deepscan import skymap, Fmask, dbscan, remote_data, minpts
+from deepscan import skymap, masking, dbscan, remote_data
 import matplotlib.pyplot as plt
 
 #==============================================================================
@@ -34,30 +34,19 @@ bg, rms = skymap.skymap(data, mask=mask, wsize=50/ps)
 data_ = data - bg
 
 #Apply noise mask
-masked = Fmask.fmask(data_, mask=mask, rms=rms)
+masked = masking.apply_mask(data_, mask=mask, rms=rms)
 
-#Set DBSCAN parameters
-eps = 10    #arcsec
-thresh = 0  #SNR
-kappa = 16 
-
-#Estimate eta
-mpts = minpts.estimate_minpts(eps=eps/ps, kappa=kappa, tmin=thresh, rms=1)
 
 #Run dbscan
-clusters, areas, sources = dbscan.dbscan_conv.dbscan_conv(eps=eps/ps,
-                                            rms=rms,
-                                            data=masked,
-                                            thresh=thresh,
-                                            mpts=mpts,
-                                            Nthreads=4)  #Parallel by default
+clustered = dbscan.dbscan(eps=10, thresh=0.5, kappa=16, ps=ps, rms=rms, data=masked,
+                          Nthreads=4) #Parallel by default
                                                           
                                                           
 plt.figure(figsize=(12,4))
 plt.subplot(1,3,1)
 plt.imshow(np.arcsinh(data), cmap='binary')
 plt.subplot(1,3,2)
-areas_ = areas.astype('float'); areas_[areas_==0] = float(np.nan)
+areas_ = clustered.segmap.astype('float'); areas_[areas_==0] = float(np.nan)
 plt.imshow(areas_, cmap='hsv')
 plt.subplot(1,3,3)
 plt.imshow(mask, cmap='binary')
@@ -65,14 +54,12 @@ plt.tight_layout()
                          
 plt.figure()
 plt.imshow(np.arcsinh(data), cmap='binary')
-area_bin = (areas!=0).astype('int')
-plt.contour(area_bin, colors='lawngreen')   
+plt.contour(clustered.segmap!=0, colors='lawngreen')   
 
 
 
-es = [s.get_ellipse_max(clusters) for s in sources]
+#es = [s.get_ellipse_max(clustered.segmap) for s in clustered.sources]
 
                                             
-plt.figure(); plt.imshow(clusters!=0, cmap='binary')
-[e.draw(color='lawngreen') for e in es]
+
 

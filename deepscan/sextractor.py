@@ -32,7 +32,10 @@ def sextract(data, mzero, ps, flux_frac=0.5, detect_thresh=1.5,
         #Make the parameter file
         param_name = os.path.join(dirpath, 'default.param')
         with open(param_name, 'w') as param:
-            param.write('X_IMAGE\nY_IMAGE\nMAG_AUTO\nFLUX_RADIUS\nA_IMAGE\nB_IMAGE\nTHETA_IMAGE\nMAG_ISO\nKRON_RADIUS\nISOAREA_IMAGE\nXMAX_IMAGE\nXMIN_IMAGE\nYMAX_IMAGE\nYMIN_IMAGE')
+            param.write('X_IMAGE\nY_IMAGE\nMAG_AUTO\nFLUX_RADIUS\nA_IMAGE\n\
+                        B_IMAGE\nTHETA_IMAGE\nMAG_ISO\nKRON_RADIUS\nFLUX_MAX\n\
+                        ISOAREA_IMAGE\nXMAX_IMAGE\nXMIN_IMAGE\nYMAX_IMAGE\n\
+                        YMIN_IMAGE')
             
         #Convert the bools to Y or Ns
         if clean:
@@ -90,14 +93,14 @@ def write_filter(arr, fname, norm=False):
     file.close()
     
     
-    
+
 def read_output(filename):
     keys = []
     with open(filename, 'r') as f:
         #Get the keys
         for line in f.readlines():
             if line[0] == '#':
-                keys.append(line.split(' ')[4])
+                keys.append(line.split()[2])
     #Make container for data and fill
     data = [[] for key in keys]
     with open(filename, 'r') as f:
@@ -124,6 +127,13 @@ def ellipses_re(df, radius_key='FLUX_RADIUS'):
     return ells
 
 
+
+class sextractor_ellipse(geometry.ellipse):
+    '''Child class of ellipse that allows for extra information.'''
+    def __init__(self, x0, y0, a, b, theta, flux_max=None):
+        geometry.ellipse.__init__(self,x0=x0,y0=y0,a=a,b=b,theta=theta)
+        self.flux_max = flux_max
+        
 def ellipses_iso(df, uiso, ps, Nthreads=NTHREADS):
     
     pool = multiprocessing.Pool(Nthreads)
@@ -142,11 +152,13 @@ def ellipses_iso(df, uiso, ps, Nthreads=NTHREADS):
         qs = df['B_IMAGE']/df['A_IMAGE']
         risos = sersic.isophotal_radius(uiso, ues, res, ns, bs)
         
-        ells = [geometry.ellipse(a=risos[i] / ps, 
+        ells = [sextractor_ellipse(a=risos[i] / ps, 
                                  b=risos[i]*qs[i] / ps,
                                  theta=thetas[i],
                                  x0=df['X_IMAGE'][i],
-                                 y0=df['Y_IMAGE'][i]) for i in range(res.size)]
+                                 y0=df['Y_IMAGE'][i],
+                                 flux_max=df['FLUX_MAX'][i])
+                                for i in range(res.size)]                              
     finally:
         pool.close()
         pool.join()

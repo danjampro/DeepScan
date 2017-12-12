@@ -12,16 +12,18 @@ import numpy as np
 from scipy.interpolate import griddata, CloughTocher2DInterpolator
 from scipy.ndimage.filters import median_filter, gaussian_filter
 from skimage.restoration import inpaint
-from functools import partial
+#from functools import partial
 from multiprocessing import Pool
 from . import NTHREADS, BUFFSIZE
 
 
-def _process_init(fp):
+def _process_init(fp, interp):
     global smap
+    global interp_
     smap = fp
+    interp_ = interp
 def gen_spline_map(points, values, sizex, sizey, fillwidth=None, Nthreads=NTHREADS,
-                   partition=True):
+                   lowmem=False):
     '''
     Fit a cubic spline to data.
     
@@ -34,10 +36,10 @@ def gen_spline_map(points, values, sizex, sizey, fillwidth=None, Nthreads=NTHREA
     '''
     
     #If a small image
-    if not partition:
+    if not lowmem:
         
         grid_x, grid_y = np.meshgrid(np.linspace(0, sizex, sizex), np.linspace(0, sizey, sizey))
-        gcube = griddata(points, values, (grid_x, grid_y), method='cubic')
+        splined = griddata(points, values, (grid_x, grid_y), method='cubic')
     
     else:
         
@@ -57,7 +59,7 @@ def gen_spline_map(points, values, sizex, sizey, fillwidth=None, Nthreads=NTHREA
             mapfile = os.path.join(dirpath, 'spline.dat')
             
             #Create memmap 
-            gcube = np.memmap(mapfile, dtype='float32', mode='w+', shape=(sizey,sizex))
+            splined = np.memmap(mapfile, dtype=values.dtype, mode='w+', shape=(sizey,sizex))
             #gcube[:] = np.zeros((sizey, sizex))
             
             #Calculate number of windows to fill
@@ -75,17 +77,16 @@ def gen_spline_map(points, values, sizex, sizey, fillwidth=None, Nthreads=NTHREA
                     bounds.append([xmin, xmax, ymin, ymax])
                     
             #Create thread pool
-            pool = Pool(processes=Nthreads, initializer=_process_init, initargs=(gcube,))
+            pool = Pool(processes=Nthreads, initializer=_process_init, initargs=(splined,interp))
             
             #Create partial function for gen_spline_map_partial
-            partial_func = partial(gen_spline_map_partial, interp=interp)
+            #partial_func = partial(gen_spline_map_partial, interp=interp)
                     
             #Map the portions to the threads - returns None as modifying the array directly
-            pool.starmap(partial_func, bounds)
+            pool.starmap(gen_spline_map_partial, bounds)
             
             #Save the completed memmap 
             #result = np.array(gcube)
-            result = gcube
             
         finally:
             if pool is not None:
@@ -94,11 +95,11 @@ def gen_spline_map(points, values, sizex, sizey, fillwidth=None, Nthreads=NTHREA
             #del gcube
             shutil.rmtree(dirpath)
             
-    return result
+    return splined
 
 
 
-def gen_spline_map_partial(xmin, xmax, ymin, ymax, interp):
+def gen_spline_map_partial(xmin, xmax, ymin, ymax):
     '''
     Fill region of spline memmap.
     
@@ -113,7 +114,7 @@ def gen_spline_map_partial(xmin, xmax, ymin, ymax, interp):
     grid_x, grid_y = np.meshgrid(np.arange(xmin,xmax), np.arange(ymin,ymax))
     
     #Calculate interpolated values
-    interpd = interp(np.vstack([grid_x.reshape(grid_x.size),
+    interpd = interp_(np.vstack([grid_x.reshape(grid_x.size),
                                 grid_y.reshape(grid_y.size)]).T).reshape(grid_x.shape)
     
     #Fill the memmap
@@ -155,7 +156,7 @@ def get_spline_data(skygrid, rmsgrid, xmins, xmaxs, ymins, ymaxs):
 
 
 def measure_sky(data, meshsize, mask=None, est_sky=np.median, est_rms=rms_quantile,
-           fillfrac=0.5):
+           fillfrac=0.5, lowmem=False):
     
     '''
     Estimate the sky and RMS in meshes and interpolate.
@@ -225,8 +226,8 @@ def measure_sky(data, meshsize, mask=None, est_sky=np.median, est_rms=rms_quanti
     
     points, values_b, values_n = get_spline_data(bggrid, rmsgrid, xmins, xmaxs,
                                                  ymins, ymaxs) 
-    ndata = gen_spline_map(points, values_n, data.shape[1], data.shape[0])
-    bdata = gen_spline_map(points, values_b, data.shape[1], data.shape[0])
+    ndata = gen_spline_map(points, values_n, data.shape[1], data.shape[0], lowmem=lowmem)
+    bdata = gen_spline_map(points, values_b, data.shape[1], data.shape[0], lowmem=lowmem)
     ndata[ndata<0] = 0 #Account for negative RMS
     
     return bdata, ndata
@@ -234,7 +235,7 @@ def measure_sky(data, meshsize, mask=None, est_sky=np.median, est_rms=rms_quanti
 
 
 def create_skymask(data, meshsize, sigma=5, its=5, high=1.5, low=5, 
-                   tol=1.05, verbose=False, **kwargs):
+                   tol=1.05, verbose=False, lowmem=False, **kwargs):
     
     '''
     Create a source mask by iteritively rejecting high SNR peaks on smoothed
@@ -249,7 +250,7 @@ def create_skymask(data, meshsize, sigma=5, its=5, high=1.5, low=5,
     '''
     #Get the initial crude estimate for masking 
     smooth = gaussian_filter(data, sigma)
-    bgvs, rmsvs = measure_sky(smooth, meshsize=meshsize, **kwargs)
+    bgvs, rmsvs = measure_sky(smooth, meshsize=meshsize, lowmem=lowmem, **kwargs)
     mask_s = (smooth>bgvs+high*rmsvs) + (smooth<=bgvs-low*rmsvs)
     
     masked_area = mask_s.sum()
@@ -257,7 +258,8 @@ def create_skymask(data, meshsize, sigma=5, its=5, high=1.5, low=5,
     for i in range(int(its-1)):
     
         #Do a repeat with the mask in place
-        bgvs, rmsvs = measure_sky(smooth, meshsize=meshsize, mask=mask_s, **kwargs)
+        bgvs, rmsvs = measure_sky(smooth, meshsize=meshsize, mask=mask_s, lowmem=lowmem,
+                                  **kwargs)
         mask_s = (smooth>bgvs+high*rmsvs) + (smooth<=bgvs-low*rmsvs)
         
         #Masked area convergence
@@ -276,7 +278,7 @@ def create_skymask(data, meshsize, sigma=5, its=5, high=1.5, low=5,
 
 
 def skymap(data, meshsize_initial, meshsize_final, mask=None, makeplots=False, 
-           verbose=True, **kwargs):
+           verbose=True, lowmem=False, **kwargs):
     
     '''
     Create background and RMS maps.
@@ -294,11 +296,13 @@ def skymap(data, meshsize_initial, meshsize_final, mask=None, makeplots=False,
     if mask is None:
         if verbose:
             print('skymap: creating source mask...')
-        mask = create_skymask(data, meshsize_initial, verbose=verbose, **kwargs)
+        mask = create_skymask(data, meshsize_initial, verbose=verbose, 
+                              lowmem=lowmem, **kwargs)
     
     if verbose:
         print('skymap: measuring sky...')
-    sky, rms = measure_sky(data, meshsize_final, mask=mask, **kwargs)
+    sky, rms = measure_sky(data, meshsize_final, mask=mask, lowmem=lowmem,
+                           **kwargs)
     
     if makeplots:
         import matplotlib.pyplot as plt

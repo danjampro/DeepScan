@@ -64,7 +64,7 @@ class Source():
             
             #Mask condition
             if mask is not None:
-                cond *= mask[self.cslice] == 0
+                cond *= ~mask[self.cslice] 
             
             self.xs = xs[cond]
             self.ys = ys[cond]
@@ -93,29 +93,35 @@ class Source():
     
     
     
-    def fit_1Dsersic(self, data, segmap, uiso, ps, mzero, dr=5, Rmax=250, mask=None, **kwargs):
+    def fit_1Dsersic(self, data, segmap, uiso, ps, mzero, dr=5, Rmax=250, mask=None,
+                     minpts=5, makeplots=False, p0=None, pix_corr=2, Nreps=1,
+                     **kwargs):
         
         from scipy.optimize import curve_fit
         from . import sersic
         
         #Get weighted ellipse
         e_weight = self.get_ellipse_rms_weighted(data, segmap, **kwargs)
+        e_weight.x0 = int(e_weight.x0)
+        e_weight.y0 = int(e_weight.y0)
         
         #Get data cutout
-        cutout = data[int(e_weight.y0-Rmax):int(e_weight.y0+Rmax),
-                      int(e_weight.x0-Rmax):int(e_weight.x0+Rmax)]
+        xmin = int( np.max((0, int(e_weight.x0-Rmax))) )
+        ymin = int( np.max((0, int(e_weight.y0-Rmax))) )
+        xmax = int( np.min((int(e_weight.x0+Rmax), data.shape[1])) )
+        ymax = int( np.min((int(e_weight.y0+Rmax), data.shape[0])) )
         
+        cutout = data[ymin:ymax, xmin:xmax]
+                    
         #Get mask cutout
         if mask is not None:
-            mask_crp = mask[int(e_weight.y0-Rmax):int(e_weight.y0+Rmax),
-                          int(e_weight.x0-Rmax):int(e_weight.x0+Rmax)]
+            mask_crp = mask[ymin:ymax, xmin:xmax]
         else:
             mask_crp = False
         
         #Define coordinate grid
-        xx, yy = np.meshgrid(np.arange(cutout.shape[1])-Rmax, np.arange(cutout.shape[0])-Rmax)
-        x0 = Rmax; y0=Rmax
-        
+        xx, yy = np.meshgrid(np.arange(xmin, xmax), np.arange(ymin, ymax))
+                
         r = 0
         Icrit = SB.SB2Counts(uiso, ps, mzero)
         Is = []
@@ -124,13 +130,21 @@ class Source():
         while True:
             
             #Get inside ellipse condition
-            e1 = geometry.ellipse(x0=x0, y0=y0, a=r, b=r*e_weight.q, theta=e_weight.theta)
-            e2 = geometry.ellipse(x0=x0, y0=y0, a=r+dr, b=(r+dr)*e_weight.q, theta=e_weight.theta)
-        
-            inside = e2.check_inside(xx,yy) * ~e1.check_inside(xx,yy) * ~mask_crp
+            if r == 0:
+                e2 = geometry.ellipse(x0=e_weight.x0, y0=e_weight.y0, a=r+dr, b=(r+dr)*e_weight.q, theta=e_weight.theta)
+                inside = e2.check_inside(xx,yy) * ~mask_crp
+                    
+            else:
+                e1 = geometry.ellipse(x0=e_weight.x0, y0=e_weight.y0, a=r, b=r*e_weight.q, theta=e_weight.theta)
+                e2 = geometry.ellipse(x0=e_weight.x0, y0=e_weight.y0, a=r+dr, b=(r+dr)*e_weight.q, theta=e_weight.theta)
             
+                inside = e2.check_inside(xx,yy) * ~e1.check_inside(xx,yy) * ~mask_crp
+                
+            #Calculate average brightness within anulus
             I = np.median(cutout[inside])
-            dI = np.std(cutout[inside]) / np.sqrt(inside.sum())
+                       
+            #Calculate error taking into account pixel correlation
+            dI = np.std(cutout[inside]) / np.sqrt(inside.sum() / np.pi) * pix_corr
             
             if np.isfinite(I) * (inside.sum() > 2):
                 Is.append(I)
@@ -138,34 +152,136 @@ class Source():
                 rs.append(0.5*(2*r + dr))
                 
                 #Break condition
-                if I <= Icrit:
+                if (I <= Icrit) * (len(Is) >= minpts):
                     break
             #Increase the radius    
             r += dr
     
             #Max radius condition
             if r >= Rmax:
+                print('WARNING: maximum radius has been reached.')
+                if len(Is) < minpts:
+                    return None
                 break
-        
-        try:
-            popt, pcov = curve_fit(sersic.profile, xdata=rs, ydata=Is, sigma=dIs)
-            return popt
-        except:
-            return None
+            
+            
+        #Do some data pertubations within error to get more robust result
+        if Nreps > 1:
+            from astropy.stats import sigma_clip
+            if makeplots:
+                import matplotlib.pyplot as plt
+                plt.figure()
+                plt.errorbar(rs, Is, yerr=dIs, color='k')
+            popts = []
+            for n in range(Nreps):
+                Is2 = np.random.normal(loc=Is, scale=dIs)
+                try:
+                    popt, pcov = curve_fit(sersic.profile, xdata=rs, ydata=Is2,
+                                           p0=p0, bounds=(np.zeros(3),
+                                                          np.ones(3)*np.inf))
+                    popts.append(popt)
+                    if makeplots:
+                        rs2 = np.linspace(0, np.max(rs))
+                        plt.plot(rs2, sersic.profile(rs2, popt[0], popt[1], popt[2]), color='grey')
+                except:
+                    pass
+            if len(popts) == 0:
+                return None
+            else:
+                #Get median clipped result
+                popts = np.vstack([popts])
+                #popt = np.median(np.vstack(popts), axis=0)
+                #Apply the sigma clip
+                popt = [np.median(sigma_clip(popts[:,i])) for i in range(popts.shape[1])]
+                
+                if makeplots:
+                    rs2 = np.linspace(0, np.max(rs))
+                    plt.plot(rs2, sersic.profile(rs2, popt[0], popt[1], popt[2]), color='r')
+                    
+                #Return dictionary with result
+                mag = sersic.magnitude(popt[0], popt[1], popt[2])
+                return {'x0':e_weight.x0, 'y0':e_weight.y0, 'theta':e_weight.theta,
+                        'ue':SB.Counts2SB(popt[0],ps,mzero), 're':popt[1]*ps,
+                        'n':popt[2], 'mag':mag}
+                
+                
+        #If no repeats are necessary, do a single fit...
+        else:
+            if makeplots:
+                import matplotlib.pyplot as plt
+                plt.figure()
+                plt.errorbar(rs, Is, yerr=dIs, color='k')
+            try:
+                popt, pcov = curve_fit(sersic.profile, xdata=rs, ydata=Is, sigma=dIs,
+                                       p0=p0)
+                if makeplots:
+                    rs2 = np.linspace(0, np.max(rs))
+                    plt.plot(rs2, sersic.profile(rs2, popt[0], popt[1], popt[2]), color='r')
+                
+                #Return dictionary with result
+                mag = sersic.magnitude(popt[0], popt[1], popt[2])
+                return {'x0':e_weight.x0, 'y0':e_weight.y0, 'theta':e_weight.theta,
+                        'ue':SB.Counts2SB(popt[0],ps,mzero), 're':popt[1]*ps,
+                        'n':popt[2], 'mag':mag}
+            except Exception as e:
+                print(e)
+                return None
             
         
-            
+
+    def display(self, data, ax=None, mapping=np.arcsinh, mask=None, size=None,
+                segmap=None, cmap='binary', apply_mask=True, **kwargs):
+        '''
+        Display the slice of data corresponding to the source.
         
+        Parameters
+        ----------
         
+        Returns
+        -------
         
-        
-        
-        
-    
-    
-    def display(self, data, ax=None, mapping=np.arcsinh, **kwargs):
+        '''
         import matplotlib.pyplot as plt
+        
+        if mapping is None: mapping = lambda x: x
+        
         if ax is None:
             fig, ax = plt.subplots()
-        ax.imshow(mapping(data[self.cslice]), **kwargs)
+        if size is None: 
+            slc = self.cslice
+        else:
+            R = int(size/2)
+            x0 = int(0.5 * (self.cslice[1].start + self.cslice[1].stop))
+            y0 = int(0.5 * (self.cslice[0].start + self.cslice[0].stop))
+            xovr = int(np.max((0, x0+R-data.shape[1])))
+            xund = int(np.max((0, R-x0)))
+            yovr = int(np.max((0, y0+R-data.shape[0])))
+            yund = int(np.max((0, R-y0)))
+            slc = ( slice(y0-R+yund, y0+R-yovr),
+                    slice(x0-R+xund, x0+R-xovr) )
+      
+        if apply_mask:
+            data2 = np.zeros((slc[0].stop-slc[0].start,slc[1].stop-slc[1].start ))
+            data2[:,:] = data[slc]
+            data2[mask[slc]] = float(np.nan)
+            ax.imshow(mapping(data2), cmap=cmap, **kwargs)
+            data3 = np.zeros((slc[0].stop-slc[0].start,slc[1].stop-slc[1].start ))
+            data3[:,:] = data[slc]
+            data3[~mask[slc]] = float(np.nan)
+            ax.imshow(mapping(data3), cmap=cmap, **kwargs)
+        else:
+            ax.imshow(mapping(data[slc]), cmap=cmap, **kwargs)
+            
+        if mask is not None:
+            if mask[slc].any():
+                ax.contour(mask[slc], colors='deepskyblue')
+        if segmap is not None:
+            ax.contour(segmap[slc] == self.label, colors='lawngreen')
+            try:
+                ax.contour((segmap[slc]!=self.label) * (segmap[slc]!=0), colors='orange')
+            except ValueError:
+                pass
+                
+            
+            
         

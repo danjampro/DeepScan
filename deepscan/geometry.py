@@ -113,7 +113,7 @@ class ellipse():
         return (A + B) <= 1
         
         
-    def draw(self, ax=None, pts=100, **kwargs):
+    def draw(self, ax=None, color='r', pts=100, **kwargs):
         
         '''Draw the ellipse on the axis'''
         if ax is None:
@@ -129,7 +129,7 @@ class ellipse():
         y2 = x*np.cos(-self.theta) - y*np.sin(-self.theta) + self.y0
         x2 = y*np.cos(-self.theta) + x*np.sin(-self.theta) + self.x0
         
-        ax.plot(x2, y2, **kwargs)
+        ax.plot(x2, y2, color=color, **kwargs)
         
         
     def rescale(self, factor):

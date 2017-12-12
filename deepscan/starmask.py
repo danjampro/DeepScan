@@ -8,11 +8,12 @@ Created on Mon Sep 25 11:18:26 2017
 """
 
 import time
-from deepscan import geometry, convolution, Smask, NTHREADS
+from deepscan import geometry, convolution, masking, NTHREADS
 import numpy as np
 from scipy.ndimage.measurements import label, maximum_position
-from joblib import Parallel, delayed
-
+#from joblib import Parallel, delayed
+from multiprocessing import Pool
+from functools import partial
 
 
 def find_sat_regions(data, saturate):
@@ -92,7 +93,7 @@ def measure_average_flux(data, x0, y0, r0, dr, mask=None, estimator=np.median):
     
 
 
-def _fit_apertures(data, Icrit, Rmax, dr, mps, mask=None):
+def _fit_apertures(mps, Icrit, Rmax, dr):
     
     apertures = []
     
@@ -108,7 +109,7 @@ def _fit_apertures(data, Icrit, Rmax, dr, mps, mask=None):
             r = (i+1)*dr
                     
             #Measure the average SB within annulus
-            sb = measure_average_flux(data, mp[1], mp[0], i*dr, dr, mask=mask) 
+            sb = measure_average_flux(data_ap, mp[1], mp[0], i*dr, dr, mask=mask_ap) 
             
             #If average SB is below threshold then break and save ellipse
             if sb < Icrit: 
@@ -129,9 +130,24 @@ def _fit_apertures(data, Icrit, Rmax, dr, mps, mask=None):
     return apertures
            
     
-        
-def fit_apertures(data, Icrit, Nobjs, labeled, convolved=None, mask=None, dr=5, Rmax=1E+4,
-                  Nthreads=NTHREADS):
+
+def _init_fit_apertures(data, mask):
+    '''
+    Initializer for fit_apertures process pool.
+
+    Parameters
+    ----------
+
+    Results
+    -------
+
+    '''
+    global data_ap, mask_ap
+    data_ap = data   
+    mask_ap = mask
+    
+def fit_apertures(data, Icrit, Nobjs, labeled, convolved=None, mask=None, dr=5,
+                  Rmax=1E+4, Nthreads=NTHREADS):
     '''
     Fit circular apertures to saturated regions.
     
@@ -141,8 +157,7 @@ def fit_apertures(data, Icrit, Nobjs, labeled, convolved=None, mask=None, dr=5, 
     Returns
     -------
     
-    '''
-        
+    '''     
     if convolved is None:
         convolved = data
     
@@ -153,17 +168,16 @@ def fit_apertures(data, Icrit, Nobjs, labeled, convolved=None, mask=None, dr=5, 
     #Do calculations for parallelisation
     n = int(len(mps)/Nthreads)
     chunks = [mps[i:i + n] for i in range(0, len(mps), n)]
-    
-    #Don't want memmaps at this stage
-    data = np.array(data)
-    #Apply the mask now to save time later
-    data[mask] = float(np.nan)
-    
-    #Estimate apertures in parallel
-    apertures = Parallel(n_jobs=Nthreads)(
-            delayed(_fit_apertures)(data, Icrit, Rmax, dr, chunk)
-            for chunk in chunks)
-    
+            
+    #Create the pool
+    pool = Pool(Nthreads, initializer=_init_fit_apertures, initargs=[data, mask])
+    try:
+        apertures = pool.map(partial(_fit_apertures, Icrit=Icrit, Rmax=Rmax,
+                                     dr=dr), chunks)
+    finally:
+        pool.close()
+        pool.join()
+            
     #Flatten list
     apertures_ = []
     for aps in apertures:
@@ -185,7 +199,6 @@ def starmask(data, saturate, Icrit, convolve_size=25, dilate_size=15, dr=20,
     -------
     
     '''
-    
     t0 = time.time()
     if verbose:
         print('starmask: finding objects...')
@@ -213,12 +226,12 @@ def starmask(data, saturate, Icrit, convolve_size=25, dilate_size=15, dr=20,
         
     #Fit the apertures around the saturation regions
     #dilated is used as a mask for the average flux calculation
-    aps = fit_apertures(np.array(data), Icrit, Nobjs, labeled, convolved=convolved, dr=dr,
+    aps = fit_apertures(data, Icrit, Nobjs, labeled, convolved=convolved, dr=dr,
                         Rmax=Rmax, mask=dilated, Nthreads=NTHREADS)
             
     #Create the output mask
-    mask = Smask.source_mask(ellipses=aps, data=np.zeros_like(data, dtype='bool'),
-                         noise=None, fillval=True, **kwargs).astype('bool')
+    mask = masking.mask_ellipses(ellipses=aps, data=np.zeros_like(data, dtype='bool'),
+                         rms=None, fillval=True, **kwargs).astype('bool')
     mask += dilated
     
     t1 = time.time() - t0

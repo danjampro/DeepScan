@@ -134,8 +134,8 @@ def index_re_kron(re, rk, xatol=0.1):
     
 
 def effective_SB(mtot, re, n, b=None):
-    
-    '''Calculate the SB at the effective radius.
+    '''
+    Calculate the SB at the effective radius.
     
     Parameters
     ----------
@@ -153,12 +153,42 @@ def effective_SB(mtot, re, n, b=None):
     float:
         SB at the effective radius.
     '''
-    
     b = sersic_b(n) if (b is None) else b
     
     A = 2 * np.pi * re**2 *n * np.e**b / b**(2*n)
     
     return mtot + 2.5*np.log10( A * gamma(2*n) )
+
+
+def average_effective_SB(ue, n):
+    '''
+    Average surface brightness within the effective radius.
+    
+    Paramters
+    ---------
+    
+    Returns
+    -------
+    
+    '''
+    b = sersic_b(n)
+    f = n * np.e**b * gamma(2*n) / b**(2*n)
+    return ue - 2.5*np.log10(f)
+    
+    
+def magnitude(ue, re, n):
+    '''
+    Total magnitude.
+    
+    Parameters
+    ----------
+    
+    Returns
+    -------
+    
+    '''
+    ueav = average_effective_SB(ue, n)
+    return ueav - 2.5*np.log10( 2*np.pi*re**2 ) 
 
 
 

@@ -19,10 +19,18 @@ def process_init(output_memmap, rms, fillval, buffsize):
     rms_arr = rms
     fillval_arr = fillval
     buffsize_ = buffsize
-def mask_ellipses(data, ellipses, rms, Nprocs=NTHREADS, buffsize=BUFFSIZE, fillval=0):
     
-    '''Make mask based on cluster file'''
-
+def mask_ellipses(data, ellipses, rms, Nthreads=NTHREADS, buffsize=BUFFSIZE, fillval=0):
+    '''
+    Make ellipses, returning memmap.
+    
+    Parameters
+    ----------
+    
+    Returns
+    -------
+    
+    '''
     temppath = tempfile.mkdtemp()
     pool = None
     try:
@@ -32,20 +40,16 @@ def mask_ellipses(data, ellipses, rms, Nprocs=NTHREADS, buffsize=BUFFSIZE, fillv
         data2[:,:] = data[:,:] #Fill the new array with the data
                                
         #Generate the mask in parallel
-        pool = multiprocessing.Pool(processes=Nprocs, initializer=process_init, initargs=(data2, rms, fillval, buffsize))
+        pool = multiprocessing.Pool(processes=Nthreads, initializer=process_init, initargs=(data2, rms, fillval, buffsize))
         pool.starmap(mask_ellipse, [[e] for e in ellipses])    
-               
-        #Save the memmap array
-        result = np.array(data2)
-        
+                       
     finally:
         shutil.rmtree(temppath)
         if pool is not None:
             pool.close()
             pool.join()
-        del data2
     
-    return result
+    return data2
 
 
 

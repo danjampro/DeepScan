@@ -9,75 +9,108 @@ Created on Wed Oct 18 18:02:27 2017
 
 import os, tempfile, multiprocessing, shutil, time
 import numpy as np
-#from scipy.signal import fftconvolve
 from scipy.ndimage.measurements import label, find_objects
-from scipy.ndimage.morphology import binary_erosion
-from astropy.convolution import Tophat2DKernel
-#from functools import partial
-from . import minpts, source, convolution, NTHREADS, BUFFSIZE
-#from joblib import Parallel, delayed
+from scipy.ndimage.morphology import binary_erosion, binary_dilation
+from functools import partial
+from . import minpts, source, geometry, convolution, NTHREADS, BUFFSIZE
 
+#==============================================================================
+    
+def _dilate_regions(slices, kernel):
+    '''
+    Perform binary errosion on slices.
+    
+    Parameters
+    ----------
+    
+    Returns
+    -------
+    
+    '''
+    for slc in slices:
+        
+        #print(slc)
+        
+        cutout = segmap_orig_[slc] 
+        
+        dilation = binary_dilation(cutout, kernel) 
+        
+        segmap_dilate_[slc] = dilation
+      
+        
+def _init_dilate(segmap_in, segmap_out):
+    '''
+    Initializer for dilate_segmap process pool.
+    
+    Parameters
+    ----------
+    
+    Returns
+    -------
+    
+    '''
+    global segmap_orig_, segmap_dilate_
+    segmap_orig_ = segmap_in
+    segmap_dilate_ = segmap_out
+    
+def dilate_corepts(corepts, kernel, directory=None, Nthreads=NTHREADS,
+                  buffsize=BUFFSIZE):
+    '''
+    Perform binary dilation on the segmap.
+    
+    Paramters
+    ---------
+    
+    Returns
+    -------
+    
+    '''
+    
+    try:
+        
+        #Set up the output
+        temppath = None
+        if directory is None:
+            temppath = tempfile.mkdtemp()
+            fname = os.path.join(temppath, 'seg2.dat')
+            segmap2 = np.memmap(fname,dtype='bool',mode='w+',shape=corepts.shape)
+        else:
+            segmap2 = np.memmap(os.path.join(directory, 'segmap2.dat'), dtype='bool',
+                         shape=corepts.shape, mode='w+')
+                
+        #Do calculations for parallelisation
+        slices = []
+        chunksize = int(np.min((buffsize/corepts.dtype.itemsize, np.sqrt(corepts.size)/Nthreads)))
+        for x in np.arange(0, corepts.shape[1], chunksize):
+            for y in np.arange(0, corepts.shape[0], chunksize):
+                slices.append( (slice(int(y),int(y+chunksize)),
+                                slice(int(x),int(x+chunksize))) )
+        n = int(len(slices)/Nthreads) + 1
+        chunks = [slices[i:i + n] for i in range(0, len(slices), n)]
+         
+        #Create the pool
+        pool = multiprocessing.Pool(processes=Nthreads,initializer=_init_dilate,
+                                    initargs=(corepts, segmap2))
+        pfunc = partial(_dilate_regions, kernel=kernel)
+        pool.map(pfunc, chunks)
+    
+    finally:
+        if pool is not None:
+            pool.close()
+            pool.join()
+        if temppath is not None:
+            shutil.rmtree(temppath)
+            
+    return segmap2
+    
+
+            
 
 #==============================================================================
 
-"""
-def perform_convolution(xmin, xmax, ymin, ymax, R, kernel, dshape):
-    
-    #Expand box
-    xmax2 = xmax + R
-    xmin2 = xmin - R
-    ymin2 = ymin - R
-    ymax2 = ymax + R
-    
-    #Look for boundary overlap
-    xoverlap1 = np.max((0, -xmin2))           #Negative x boundary overlap
-    xoverlap2 = np.max((0, xmax2-dshape[1]))  #Positive x boundary overlap
-    yoverlap1 = np.max((0, -ymin2))           #Negative y boundary overlap
-    yoverlap2 = np.max((0, ymax2-dshape[0]))  #Positive y boundary overlap
-    
-    #Crop
-    xmax2 = int(np.min((xmax2, dshape[1])))
-    ymax2 = int(np.min((ymax2, dshape[0])))
-    xmin2 = int(np.max((xmin2, 0)))
-    ymin2 = int(np.max((ymin2, 0)))
-      
-    cnv = fftconvolve(np.array(threshed[ymin2:ymax2,xmin2:xmax2]),
-                                        kernel, mode='same').astype('int')
-        
-    conv[ymin:ymax, xmin:xmax] = cnv[R-yoverlap1:cnv.shape[0]-R+yoverlap2,
-                                            R-xoverlap1:cnv.shape[1]-R+xoverlap2]
-            
-def perform_convolution2(xmin, xmax, ymin, ymax, R, kernel, dshape):
-    
-    #Expand box
-    xmax2 = xmax + R
-    xmin2 = xmin - R
-    ymin2 = ymin - R
-    ymax2 = ymax + R
-    
-    #Look for boundary overlap
-    xoverlap1 = np.max((0, -xmin2))           #Negative x boundary overlap
-    xoverlap2 = np.max((0, xmax2-dshape[1]))  #Positive x boundary overlap
-    yoverlap1 = np.max((0, -ymin2))           #Negative y boundary overlap
-    yoverlap2 = np.max((0, ymax2-dshape[0]))  #Positive y boundary overlap
-    
-    #Crop
-    xmax2 = int(np.min((xmax2, dshape[1])))
-    ymax2 = int(np.min((ymax2, dshape[0])))
-    xmin2 = int(np.max((xmin2, 0)))
-    ymin2 = int(np.max((ymin2, 0)))
-      
-    #Convolve and fill
-    cnv = fftconvolve(np.array(conv[ymin2:ymax2,xmin2:xmax2]),
-                                        kernel, mode='same').astype('int')
-    conv2[ymin:ymax, xmin:xmax] = cnv[R-yoverlap1:cnv.shape[0]-R+yoverlap2,
-                                            R-xoverlap1:cnv.shape[1]-R+xoverlap2]
-"""   
-
-
 def _erode_regions(sources, kernel):
     '''
-    Perform binary errosion on slices.
+    Perform binary erosion on slices.
     
     Parameters
     ----------
@@ -147,22 +180,16 @@ def erode_segmap(segmap, sources, kernel, directory, Nthreads=NTHREADS):
     return segmap2
                     
 
-"""
-def init(thresh_memmap, conv_memmap, conv_memmap2):
-    global threshed, conv, labeled, conv2
-    threshed = thresh_memmap
-    conv = conv_memmap
-    conv2 = conv_memmap2
-"""    
+#==============================================================================
     
 def dbscan_conv(data, thresh, eps, mpts, Nthreads=NTHREADS,
                                          meshsize=None,
                                          thresh_type='SNR',
                                          rms=None,
-                                         minCsize=5,
                                          erode=True,
                                          lowmem=False,
-                                         verbose=True):
+                                         verbose=True,
+                                         fft_tol=1E-5):
                                              
     #Do some argument checking
     if Nthreads < 1:
@@ -205,13 +232,12 @@ def dbscan_conv(data, thresh, eps, mpts, Nthreads=NTHREADS,
         
                    
     #Create a convolution kernel
-    kernel_conv = Tophat2DKernel(eps).array
-    kernel_conv[kernel_conv!=0] = 1  #Require unit height
+    kernel_conv = geometry.unit_tophat(eps)
     
     #Create a tempory file for the memory map
     temppath = tempfile.mkdtemp()
-
-    pool = None                                               
+    pool = None  
+    t0 = time.time()                                             
     try:
                
         #Obtain the thresholded image
@@ -225,124 +251,67 @@ def dbscan_conv(data, thresh, eps, mpts, Nthreads=NTHREADS,
             threshed = (data > thresh*rms).astype('int')
         
         
-        if verbose: print('-convolving...')
+        t_thresh = time.time() - t0
+        print('-threshold applied after %i seconds' % t_thresh )
         
-        print('lowmem', lowmem)
         
+
+        t_dbscan_start = time.time()
         
         #Obtain the core points
         if lowmem:
             
-            tx = time.time()
-            
-            corepts = convolution.convolve_large(threshed, kernel=kernel_conv,
+            corepts = convolution.convolve_large(threshed.astype('float32'), kernel=kernel_conv,
                                                    meshsize=meshsize,
                                                    Nthreads=Nthreads,
-                                                   dtype='int')
+                                                   dtype='float32') #Float to reduce artefacts
             
-            ty = time.time() - tx 
-            print(ty)
-            
-            print('modifying')
             for col in range(data.shape[0]):
-                corepts[col] = (corepts[col] >= mpts+1) * threshed[col]
+                corepts[col] = (corepts[col] >= mpts-fft_tol) * threshed[col]
                 
-            tz = time.time() - ty - tx
-            print(tz)
             
         else:
-            corepts = convolution.convolve(threshed, kernel=kernel_conv)
-            corepts = (corepts >= mpts+1) * threshed
+            corepts = convolution.convolve(threshed.astype('float32'), kernel=kernel_conv)
+            corepts = (corepts >= mpts-fft_tol) * threshed
         corepts = corepts.astype('int')  
         
         
-        print('pass 1')
+        ty = time.time() - t_dbscan_start
+        print('-corepoints obtained after %i seconds' % ty )
     
         
         #Obtain the area corresponding to the secondary points + core points
         if lowmem:
             secarea = convolution.convolve_large(corepts, kernel=kernel_conv,
                                                    meshsize=meshsize,
-                                                   Nthreads=Nthreads,dtype='int')                                              
+                                                   Nthreads=Nthreads,dtype='float32')                                              
             for col in range(data.shape[0]):
-                secarea[col] = (secarea[col] >= 1) #Prevent negatives
+                secarea[col] = (secarea[col] >= 1-fft_tol) #Prevent negatives
             secarea = secarea.astype('int')
         else:
-            secarea = convolution.convolve(corepts, kernel=kernel_conv)
-            secarea = (secarea >= 1).astype('int')
+            secarea = convolution.convolve(corepts.astype('float32'), kernel=kernel_conv)
+            secarea = (secarea >= 1-fft_tol).astype('int')
+            
+        
+        t_sec = time.time() - ty - t_dbscan_start
+        print('-secondary regions obtained after %i seconds.' % t_sec )
                 
 
-        if verbose: print('-labeling...')
-        
-        
         #Do the labeling on one processor
         labeled, Nlabels = label(secarea)
-        slices_labeled = find_objects(labeled)
+        #slices_labeled = find_objects(labeled)
+        slices = find_objects(labeled)
         
-        '''
-        #Select the clusters as core points - this was here (in wrong place before)
-        corepoints *= threshed
-        clusters = corepoints * labeled
-        '''
+        
+        t_labels = time.time()-t_sec-ty-t_dbscan_start
+        print('-Regions labeled after %i seconds.' % t_labels )
         
         #Label the clusters
-        clusters = corepts * labeled
+        corepts = corepts * labeled
         
-        #Find unique cluster identifiers
-        uids_ = np.unique(clusters)
-        if uids_[0]==0:  #Remove 0 for cluster IDs
-            uids_ = uids_[1:]
-                
-        #Remove clusters that are too small
-        slices_clus = [s for s in find_objects(clusters) if s is not None]
-        clens = [np.sum(clusters[s]==cid) for cid, s in zip(uids_, slices_clus)]
         
-        uids = np.array([u for i, u in enumerate(uids_) if clens[i]>=minCsize])  
-        #Delete the clusters than were eliminated
-        if uids.size != uids_.size:          
-            for i, s in enumerate(slices_clus):
-                if (i+1) not in uids:
-                    clusters[s][clusters[s]==(i+1)]=0
-        Nclusters = uids.size
-        
-        if verbose: print('-cleaning...')
-                            
-        #Check if there are any non-continuities in the labeling
-        if uids.size != 0:
+        if Nlabels != 0:
             
-            if (uids[-1] != Nlabels) or (Nlabels!=uids.size):
-                
-                #Select label_ids to keep
-                label_ids = np.arange(1,Nlabels+1)
-                label_slices_keep = np.ones(Nlabels, dtype='bool')
-                for i, s in enumerate(slices_labeled):
-                    if (i+1) not in uids:
-                        
-                        #Delete the labels with no clusters
-                        labeled[s][labeled[s]==(i+1)]=0
-                        label_slices_keep[i] = False
-                        
-                #Do the relabling
-                ids_to_fill = (label_ids[:Nclusters])[~label_slices_keep[:Nclusters]]
-                ids_to_replace = label_ids[Nclusters:][label_slices_keep[Nclusters:]]
-
-                for i, id_fill in enumerate(ids_to_fill):
-                    #Get slice of object to relable
-                    slice_ = slices_labeled[ids_to_replace[i]-1]
-                    #Do the relable
-                    cond = labeled[slice_] == ids_to_replace[i]
-                    labeled[slice_][cond] = id_fill
-                    #Update the slices
-                    slices_labeled[id_fill-1] = slices_labeled[ids_to_replace[i]-1]
-                
-                #Finish up
-                clusters = corepts * labeled
-                slices = slices_labeled[:Nclusters]
-                
-            else:
-                slices = slices_labeled
-        
-            #Create source instances
             sources = []
             for i, slice_ in enumerate(slices):
                 sources.append( source.Source( i+1, slice_) )
@@ -350,14 +319,16 @@ def dbscan_conv(data, thresh, eps, mpts, Nthreads=NTHREADS,
             if erode:
                 if verbose: print('-eroding...')
                 #Erode the clusters to represent the core point distribution only
-                segmap = erode_segmap(labeled, sources, kernel_conv,
+                segmap = erode_segmap(labeled, sources, geometry.unit_tophat(eps),
                                       directory=temppath, Nthreads=NTHREADS)
-                    
+            t_dbscan_finish = time.time() - t_dbscan_start
+            
         else:  #If no detections
             if verbose: print('-no sources detected.')
             sources = []
             segmap = None
-    
+            t_dbscan_finish = time.time() - t_dbscan_start
+        
     finally:
         
         #Remove the temporary directory
@@ -368,7 +339,7 @@ def dbscan_conv(data, thresh, eps, mpts, Nthreads=NTHREADS,
             pool.close()
             pool.join()
         
-    return clusters, segmap, labeled, sources
+    return corepts, segmap, labeled, sources, t_dbscan_finish
 
 
 #==============================================================================
@@ -377,12 +348,12 @@ class Clustered():
     '''
     Class to house DBSCAN detections.
     '''
-    def __init__(self, clusters, segmap, segmap_dilate, sources):
-        self.clusters = clusters
+    def __init__(self, corepoints, segmap, segmap_dilate, sources, t_dbscan=None):
+        self.corepoints = corepoints
         self.segmap = segmap
         self.sources = sources
         self.segmap_dilate = segmap_dilate
-        #self.mask = mask
+        self.t_dbscan=t_dbscan
         self.Nobjs = len(sources)
 
 #==============================================================================
@@ -407,14 +378,14 @@ def dbscan(data, eps, kappa, thresh, rms, ps, verbose=True, **kwargs):
     
     if verbose: print('dbscan: performing clustering...')
     
-    clusters, segmap, segmap_dilate, sources = dbscan_conv(data, thresh=thresh,
-                                                           eps=eps, mpts=mpts,
+    corepoints, segmap, segmap_dilate, sources, t_dbscan, = dbscan_conv(data, 
+                                            thresh=thresh, eps=eps, mpts=mpts,     
                                              verbose=verbose, rms=rms, **kwargs)
     
     t1 = time.time() - t0
     
     if verbose: print('dbscan: finished after %i seconds.' % t1)
-    return Clustered(clusters, segmap, segmap_dilate, sources)
+    return Clustered(corepoints, segmap, segmap_dilate, sources, t_dbscan=t_dbscan)
     
     
     

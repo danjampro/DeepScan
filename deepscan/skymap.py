@@ -156,7 +156,7 @@ def get_spline_data(skygrid, rmsgrid, xmins, xmaxs, ymins, ymaxs):
 
 
 def measure_sky(data, meshsize, mask=None, est_sky=np.median, est_rms=rms_quantile,
-           fillfrac=0.5, lowmem=False):
+           fillfrac=0.5, lowmem=False, Nthreads=NTHREADS):
     
     '''
     Estimate the sky and RMS in meshes and interpolate.
@@ -235,8 +235,8 @@ def measure_sky(data, meshsize, mask=None, est_sky=np.median, est_rms=rms_quanti
     
     points, values_b, values_n = get_spline_data(bggrid, rmsgrid, xmins, xmaxs,
                                                  ymins, ymaxs) 
-    ndata = gen_spline_map(points, values_n, data.shape[1], data.shape[0], lowmem=lowmem)
-    bdata = gen_spline_map(points, values_b, data.shape[1], data.shape[0], lowmem=lowmem)
+    ndata = gen_spline_map(points, values_n, data.shape[1], data.shape[0], lowmem=lowmem,Nthreads=Nthreads)
+    bdata = gen_spline_map(points, values_b, data.shape[1], data.shape[0], lowmem=lowmem,Nthreads=Nthreads)
     ndata[ndata<0] = 0 #Account for negative RMS
     
     t3 = time.time() - t2 - t1 - t0

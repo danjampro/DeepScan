@@ -15,7 +15,7 @@ from functools import partial
 from . import minpts, source, geometry, convolution, NTHREADS, BUFFSIZE
 
 #==============================================================================
-    
+"""
 def _dilate_regions(slices, kernel):
     '''
     Perform binary errosion on slices.
@@ -178,8 +178,21 @@ def erode_segmap(segmap, sources, kernel, directory, Nthreads=NTHREADS):
         pool.join()
             
     return segmap2
+"""
                     
 
+def erode_segmap(segmap, kernel, directory, meshsize, lowmem=False, Nthreads=NTHREADS,
+                 fft_tol=1E-5):
+    
+    conv = convolution.convolve_large((segmap==0).astype('float32'),kernel=kernel,
+                                      Nthreads=Nthreads, meshsize=meshsize,
+                                      dtype='float32')
+    conv[:,:] = conv <= fft_tol
+    conv[:,:] = conv.astype('int') * segmap
+
+    return conv
+    
+    
 #==============================================================================
     
 def dbscan_conv(data, thresh, eps, mpts, Nthreads=NTHREADS,
@@ -319,14 +332,18 @@ def dbscan_conv(data, thresh, eps, mpts, Nthreads=NTHREADS,
             if erode:
                 if verbose: print('-eroding...')
                 #Erode the clusters to represent the core point distribution only
-                segmap = erode_segmap(labeled, sources, geometry.unit_tophat(eps),
-                                      directory=temppath, Nthreads=NTHREADS)
+                #segmap = erode_segmap(labeled, sources, geometry.unit_tophat(eps),
+                #                      directory=temppath, Nthreads=Nthreads)
+                segmap = erode_segmap(labeled, kernel_conv, temppath,
+                                      meshsize, lowmem=lowmem, Nthreads=Nthreads,
+                                      fft_tol=fft_tol)
+                
             t_dbscan_finish = time.time() - t_dbscan_start
             
         else:  #If no detections
             if verbose: print('-no sources detected.')
             sources = []
-            segmap = None
+            segmap = labeled
             t_dbscan_finish = time.time() - t_dbscan_start
         
     finally:

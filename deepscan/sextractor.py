@@ -168,7 +168,7 @@ def ellipses_iso(df, uiso, ps, Nthreads=NTHREADS):
 
 
 def get_ellipses(data, mzero, ps, uiso, mask=None, fillval=0, verbose=True,
-                 Nthreads=NTHREADS, **kwargs):
+                 Nthreads=NTHREADS, debug=True, **kwargs):
     '''
     Use SExtractor to create ellipses corresponding to isophotal radii.
     
@@ -204,5 +204,7 @@ def get_ellipses(data, mzero, ps, uiso, mask=None, fillval=0, verbose=True,
     t1 = time.time() - t0
     print('get_ellipses: finished after %i seconds.' % t1)
     
+    if debug:
+        return ellipses, dfsex
     return ellipses
       

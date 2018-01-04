@@ -169,7 +169,8 @@ def measure_sky(data, meshsize, mask=None, est_sky=np.median, est_rms=rms_quanti
     
     '''
     
-    bgsamp = int(np.ceil(meshsize/6))
+    #bgsamp = int(np.ceil(meshsize/6))
+    bgsamp = int(np.ceil(meshsize/3))
     xmins = np.arange(0, data.shape[1], bgsamp)
     xmaxs = xmins + bgsamp
     xmins[-1] = data.shape[1] - bgsamp
@@ -185,6 +186,8 @@ def measure_sky(data, meshsize, mask=None, est_sky=np.median, est_rms=rms_quanti
     ymins = np.hstack([[ymins[0]], ymins, [ymins[-1]]])
     ymaxs = np.hstack([[ymaxs[0]], ymaxs, [ymaxs[-1]]])
 
+    t0 = time.time()
+    
     #Fill the small grid ready for interpolating
     bggrid = np.zeros((ymaxs.size, xmaxs.size)) * float(np.nan)
     rmsgrid = np.zeros((ymaxs.size, xmaxs.size)) * float(np.nan)
@@ -198,10 +201,13 @@ def measure_sky(data, meshsize, mask=None, est_sky=np.median, est_rms=rms_quanti
             else:
                 mask_crp=mask[slc]
             
-            #Ensure slice at least half full
+            #Ensure slice at least fillfrac full
             if np.sum(mask_crp) < fillfrac * (slc[0].stop-slc[0].start) * (slc[1].stop-slc[1].start):
                 bggrid[j, i] = est_sky(data[slc][~mask_crp])
                 rmsgrid[j,i] = est_rms(data[slc][~mask_crp])
+                
+    t1 = time.time() - t0
+    print('-measure_sky: small grid filled after %i secs.' % t1)
     
     #Inpaint the nan values
     nmax = np.max(rmsgrid[~np.isnan(rmsgrid)])   #Skimage needs numbers between -1 and 1 for float image
@@ -218,6 +224,9 @@ def measure_sky(data, meshsize, mask=None, est_sky=np.median, est_rms=rms_quanti
     bggrid = median_filter(bggrid, 3)
     rmsgrid = median_filter(rmsgrid, 3)
     
+    t2 = time.time() - t1 - t0
+    print('-measure_sky: small grid filtered after %i secs.' % t2)
+    
     #Accounting for out of bounds interpolation
     xmins[0] = 0; xmins[-1]=data.shape[1]
     xmaxs[0] = 0; xmaxs[-1]=data.shape[1]
@@ -230,12 +239,15 @@ def measure_sky(data, meshsize, mask=None, est_sky=np.median, est_rms=rms_quanti
     bdata = gen_spline_map(points, values_b, data.shape[1], data.shape[0], lowmem=lowmem)
     ndata[ndata<0] = 0 #Account for negative RMS
     
+    t3 = time.time() - t2 - t1 - t0
+    print('-measure_sky: full grid filled after %i secs.' % t3)
+    
     return bdata, ndata
 
 
 
-def create_skymask(data, meshsize, sigma=5, its=5, high=1.5, low=5, 
-                   tol=1.05, verbose=False, lowmem=False, **kwargs):
+def create_skymask(data, meshsize, sigma=5, its=5, sigma_clip=3, 
+                   tol=1.05, verbose=False, lowmem=False, mask=False, **kwargs):
     
     '''
     Create a source mask by iteritively rejecting high SNR peaks on smoothed
@@ -251,7 +263,17 @@ def create_skymask(data, meshsize, sigma=5, its=5, high=1.5, low=5,
     #Get the initial crude estimate for masking 
     smooth = gaussian_filter(data, sigma)
     bgvs, rmsvs = measure_sky(smooth, meshsize=meshsize, lowmem=lowmem, **kwargs)
-    mask_s = (smooth>bgvs+high*rmsvs) + (smooth<=bgvs-low*rmsvs)
+    
+    if lowmem:
+        mask_s = np.zeros_like(data, dtype='bool')
+        for row in range(data.shape[0]):
+            mask_s[row]= (smooth[row]>bgvs[row]+sigma_clip*rmsvs[row]) 
+            + (smooth[row]<bgvs[row]-sigma_clip*rmsvs[row])
+    else:
+        mask_s = (smooth>bgvs+sigma_clip*rmsvs) + (smooth<bgvs-sigma_clip*rmsvs)
+    
+    #Include the provided mask
+    mask_s += mask
     
     masked_area = mask_s.sum()
     
@@ -260,7 +282,16 @@ def create_skymask(data, meshsize, sigma=5, its=5, high=1.5, low=5,
         #Do a repeat with the mask in place
         bgvs, rmsvs = measure_sky(smooth, meshsize=meshsize, mask=mask_s, lowmem=lowmem,
                                   **kwargs)
-        mask_s = (smooth>bgvs+high*rmsvs) + (smooth<=bgvs-low*rmsvs)
+        
+        if lowmem:
+            mask_s = np.zeros_like(data, dtype='bool')
+            for row in range(data.shape[0]):
+                mask_s[row]= (smooth[row]>bgvs[row]+sigma_clip*rmsvs[row]) 
+                + (smooth[row]<bgvs[row]-sigma_clip*rmsvs[row])
+        else:
+            mask_s = (smooth>bgvs+sigma_clip*rmsvs) + (smooth<bgvs-sigma_clip*rmsvs)
+        
+        mask_s += mask
         
         #Masked area convergence
         masked_area_ = mask_s.sum()
@@ -277,7 +308,7 @@ def create_skymask(data, meshsize, sigma=5, its=5, high=1.5, low=5,
 
 
 
-def skymap(data, meshsize_initial, meshsize_final, mask=None, makeplots=False, 
+def skymap(data, meshsize_initial, meshsize_final, mask_init=False, makeplots=False, 
            verbose=True, lowmem=False, **kwargs):
     
     '''
@@ -293,11 +324,10 @@ def skymap(data, meshsize_initial, meshsize_final, mask=None, makeplots=False,
     
     t0 = time.time()
     
-    if mask is None:
-        if verbose:
-            print('skymap: creating source mask...')
-        mask = create_skymask(data, meshsize_initial, verbose=verbose, 
-                              lowmem=lowmem, **kwargs)
+    if verbose:
+        print('skymap: creating source mask...')
+    mask = create_skymask(data, meshsize_initial, verbose=verbose, 
+                          lowmem=lowmem, mask=mask_init, **kwargs)
     
     if verbose:
         print('skymap: measuring sky...')
@@ -324,266 +354,3 @@ def skymap(data, meshsize_initial, meshsize_final, mask=None, makeplots=False,
     
     
     
-""" 
-
-from astropy.convolution import convolve, Tophat2DKernel
-from scipy.stats import sigmaclip 
-
-def get_bounds_basic(sizex, sizey, wsize, i, j, offsetx=1, offsety=0):
-    
-    ''' Return [xlow, xhigh, ylow, yhigh] for window '''
-    
-    #Initial window bound calculations for primary window
-    xmin1 = i * wsize
-    xmax1 = np.min((sizex, (i+1) * wsize))
-    ymin1 = j * wsize
-    ymax1 = np.min((sizey, (j+1) * wsize))
-        
-    return  [int(xmin1), int(xmax1), int(ymin1), int(ymax1)]
-
-   
-def measure_bg_basic(data, mask, bounds, default_std=0., default_bg=0.):
-    
-    '''Calculate standard deviation of unmasked region within bounds'''
-    
-    crp_data = data[bounds[2]:bounds[3], bounds[0]:bounds[1]]
-    
-    if mask is not None:
-        
-        crp_mask = mask[bounds[2]:bounds[3], bounds[0]:bounds[1]]
-        
-        if not mask.any():
-            return default_bg, default_std
-        else:
-            return np.median(crp_data[~crp_mask]), np.std(crp_data[~crp_mask])
-    else:
-        return np.median(crp_data)
-
-            
-def get_bounds_finite(sizex, sizey, wsize, i, j, offsetx=1, offsety=0):
-    
-    ''' Return [xlow, xhigh, ylow, yhigh] for primary and x-offset windows '''
-    
-    #Initial window bound calculations for primary window
-    xmin1 = i * wsize
-    xmax1 = np.min((sizex, (i+1) * wsize))
-    ymin1 = j * wsize
-    ymax1 = np.min((sizey, (j+1) * wsize))
-    
-    #Offset in x coordinates for offset window
-    xmin2 = xmin1+offsetx
-    xmax2 = xmax1+offsetx
-    ymin2 = ymin1+offsety
-    ymax2 = ymax1+offsety
-    
-    overlap=0
-    
-    #Boundary checking/cropping
-    if offsetx > 0:
-        xmax2_ = np.min((sizex, xmax2))
-        if xmax2_ != xmax2:
-            overlap = xmax2 - xmax2_
-            xmax2 = xmax2_
-            xmax1 = xmax1 - overlap
-    elif offsetx < 0:
-        xmin2_ = np.max((0, xmin2))
-        if xmin2 != xmin2_:
-            overlap = xmin2_ - xmin2
-            xmin2 = xmin2_
-            xmin1 = xmin1 + overlap
-    if offsety > 0:
-        ymax2_ = np.min((sizey, ymax2))
-        if ymax2_ != ymax2:
-            overlap = ymax2 - ymax2_
-            ymax2 = ymax2_
-            ymax1 = ymax1 - overlap
-    elif offsety < 0:
-        ymin2_ = np.max((0, ymin2))
-        if ymin2 != ymin2_:
-            overlap = ymin2_ - ymin2
-            ymin2 = ymin2_
-            ymin1 = ymin1 + overlap
-    
-    #print(offsetx, offsety, overlap, xmin1, xmax1, xmin2, xmax2, '...', ymin1, ymax1, ymin2, ymax2)
-        
-    return  [int(xmin1), int(xmax1), int(ymin1), int(ymax1)], \
-            [int(xmin2), int(xmax2), int(ymin2), int(ymax2)]
-    
-
-
-def measure_bg_finite(data, bounds1, bounds2, warea, sig=3, thinning_factor=1, mask=None, fillfrac=0.25):
-    
-    ''' Calculate the standard width of the pixel-to-pixel noise'''
-    
-    #Crop data
-    crp1 = data[bounds1[2]:bounds1[3]:thinning_factor, bounds1[0]:bounds1[1]:thinning_factor]
-    crp2 = data[bounds2[2]:bounds2[3]:thinning_factor, bounds2[0]:bounds2[1]:thinning_factor]
-            
-    #If there are some non zero values...
-    if len(crp1) > 0:
-        
-        #Calculate difference
-        if mask is None:
-            mask = ((crp1 == 0) * (crp2 == 0)) 
-            diff = (crp1 - crp2)[~mask]
-        else:
-            m1 = mask[bounds1[2]:bounds1[3]:thinning_factor, bounds1[0]:bounds1[1]:thinning_factor]
-            m2 = mask[bounds2[2]:bounds2[3]:thinning_factor, bounds2[0]:bounds2[1]:thinning_factor]
-            m1 += (crp1 == 0)
-            m2 += (crp2 == 0)
-            diff = (crp1 - crp2)[~(m1+m2)]
-            
-        #Calculate std of difference (pixel to pixel noise)
-        clipped = sigmaclip(diff, high=sig, low=sig)[0]
-        std = np.std(clipped)
-        
-        #Also calculate a background value
-        bg = np.median(clipped)
-        
-        #Require a certain fraction of pixels to be unmasked
-        if len(diff) < fillfrac*warea:
-            std = 0
-            bg = 0
-        
-        #Don't accept nan values
-        if np.isnan(std)+np.isnan(bg):
-            std = 0
-            bg = 0
-            
-    #Else if pure border, set std to 0     
-    else:
-        std = 0
-        bg = 0
-        
-    #Accound for sqrt(2) factor
-    std *= 1./np.sqrt(2)
-    
-    return bg, std
-    
-    
-def skymap(data, wsize, sig=3, offset=1, thinning_factor=1, mode='quad', mask=None, fillfrac=0.25):
-    
-    ''' Estimate the background in wsize*wsize windows as write to fits '''
-    
-    mask = mask.astype('bool')
-      
-    #Measure image
-    sizey, sizex = data.shape
-    warea = wsize**2
-    
-    #Get indices for windows 
-    nx = int(np.ceil(sizex / wsize))
-    ny = int(np.ceil(sizey / wsize))
-    
-    #This is a map of the noise with resolution elements of wsize
-    nmap_small = np.zeros((ny, nx))
-    bmap_small = np.zeros((ny, nx))
-    
-    #Loop over windows 
-    for i in range(nx):
-        for j in range(ny):
-            
-            #2-directional symmetical finite difference
-            if mode == 'quad':
-                
-                #Use a 'star' pattern
-                stds = []
-                combs = [(1,0),(-1,0),(0,1),(0,-1)]
-                               
-                for comb in combs:
-                    #Calculate window bounds
-                    bounds1, bounds2 = get_bounds_finite(sizex, sizey, wsize, i, j, offsetx=comb[0], offsety=comb[1])
-            
-                    #Calculate standard deviation (noise)
-                    bg, std = measure_bg_finite(data, bounds1, bounds2, warea=warea, sig=sig, thinning_factor=thinning_factor,
-                                                mask=mask, fillfrac=fillfrac)
-                    stds.append(std)
-                    bmap_small[j, i] = bg
-                        
-                #Update map
-                if np.sum(stds) != 0:
-                    nmap_small[j, i] = np.median([s for s in stds if s!=0])
-                else:
-                    nmap_small[j, i] = 0
-                
-                
-            #Simple mean and standard deviation case
-            elif mode == 'std':
-                
-                #Calculate std in non-masked regions directly
-                bounds = get_bounds_basic(sizex, sizey, wsize, i, j)
-                
-                bmap_small[j, i], nmap_small[j, i] = measure_bg_basic(data, mask, bounds)
-                
-                
-    #Store as 32 bit numbers to save memory
-    nmap_small = nmap_small.astype(np.float32)
-    bmap_small = bmap_small.astype(np.float32)
-    
-    #Make grid for interpolation
-    gx, gy = np.meshgrid(np.linspace(0, sizex, nx), np.linspace(0, sizey, ny))
-    
-    #Mask 0s to eliminate boarder biasing
-    mask = nmap_small != 0
-        
-    #Account for holes in data by mixture of tophat filter, inpaint, and median filter 
-    kernel = Tophat2DKernel(1)
-    nmap_small[nmap_small==0] = float(np.nan)
-    nmap_small = convolve(nmap_small, kernel=kernel, boundary='extend')
-    nmap_small[np.isnan(nmap_small)] = 0
-        
-    #Inpainting
-    nmax = np.max(nmap_small)   #Skimage needs numbers between -1 and 1 for float image
-    nmin = np.min(nmap_small)
-    nmap_small = inpaint.inpaint_biharmonic((nmap_small-nmin)/(nmax-nmin), ~mask)
-    nmap_small = nmap_small*(nmax-nmin) + nmin
-    
-    bmax = np.max(bmap_small)   
-    bmin = np.min(bmap_small)
-    bmap_small = inpaint.inpaint_biharmonic((bmap_small-bmin)/(bmax-bmin), ~mask)
-    bmap_small = bmap_small*(bmax-bmin) + bmin
-        
-    #Median fitering
-    nmap_small = median_filter(nmap_small, 3)
-    bmap_small = median_filter(bmap_small, 3)
-        
-    #Get points and values for interpolation over full-size image
-    points = np.vstack([gx.reshape(gx.size), gy.reshape(gy.size)]).T
-    values_n = nmap_small.reshape(nmap_small.size)
-    values_b = bmap_small.reshape(bmap_small.size)
-        
-    #Generate spline data on full-size image
-    ndata = gen_spline_map(points, values_n, sizex, sizey)
-    ndata = ndata.astype(np.float32)
-    bdata = gen_spline_map(points, values_b, sizex, sizey)
-    bdata = bdata.astype(np.float32)
-    
-    return bdata, ndata
-
-#==============================================================================
-
-def main(fitsdata, ofile_bg, ofile_rms, wsize, sig=3, offset=1, thinning_factor=1, overwrite=True,
-          mode='quad', fitsmask=None, fillfrac=0.25, extension_mask=0, extension_data=0):
-    
-    '''Read the data, measure the nosie and save as FITS'''
-    
-    from . import utils
-    
-    #Read fits data
-    data = utils.read_fits(fitsdata, extension=extension_data)
-    
-    #Read mask if necessary
-    if fitsmask is not None:
-        mask = utils.read_fits(fitsmask, extension=extension_mask)
-    else:
-        mask = None
-    
-    #Measure the noise
-    bdata, ndata = skymap(data, wsize, sig=sig, thinning_factor=thinning_factor,
-                        mask=mask, fillfrac=fillfrac, mode=mode, offset=offset )
-
-    #Save the result
-    utils.save_to_fits(bdata, ofile_bg,  overwrite=overwrite)
-    utils.save_to_fits(ndata, ofile_rms, overwrite=overwrite)
-    
-"""

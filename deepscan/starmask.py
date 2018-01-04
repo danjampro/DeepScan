@@ -8,7 +8,7 @@ Created on Mon Sep 25 11:18:26 2017
 """
 
 import time
-from deepscan import geometry, convolution, masking, NTHREADS
+from deepscan import masking, geometry, NTHREADS, convolution
 import numpy as np
 from scipy.ndimage.measurements import label, maximum_position
 #from joblib import Parallel, delayed
@@ -16,6 +16,7 @@ from multiprocessing import Pool
 from functools import partial
 
 
+#"""
 def find_sat_regions(data, saturate):
     '''
     Find the unique saturated regions in the data.
@@ -188,7 +189,8 @@ def fit_apertures(data, Icrit, Nobjs, labeled, convolved=None, mask=None, dr=5,
 
 
 def starmask(data, saturate, Icrit, convolve_size=25, dilate_size=15, dr=20,
-             Rmax=1000, makeplots=False, verbose=True, Nthreads=NTHREADS, **kwargs):
+             Rmax=1000, makeplots=False, verbose=True, Nthreads=NTHREADS,
+             mask=False, **kwargs):
     '''
     Create a starmask.
     
@@ -227,12 +229,16 @@ def starmask(data, saturate, Icrit, convolve_size=25, dilate_size=15, dr=20,
     #Fit the apertures around the saturation regions
     #dilated is used as a mask for the average flux calculation
     aps = fit_apertures(data, Icrit, Nobjs, labeled, convolved=convolved, dr=dr,
-                        Rmax=Rmax, mask=dilated, Nthreads=NTHREADS)
+                        Rmax=Rmax, mask=dilated+mask, Nthreads=NTHREADS)
             
     #Create the output mask
-    mask = masking.mask_ellipses(ellipses=aps, data=np.zeros_like(data, dtype='bool'),
+    mask_ = masking.mask_ellipses(ellipses=aps, data=np.zeros_like(data, dtype='bool'),
                          rms=None, fillval=True, **kwargs).astype('bool')
+    mask_ += dilated
+    '''
     mask += dilated
+    mask += mask_
+    '''
     
     t1 = time.time() - t0
     
@@ -250,9 +256,122 @@ def starmask(data, saturate, Icrit, convolve_size=25, dilate_size=15, dr=20,
         plt.ylim(data.shape[0], 0)
         
     print('starmask: finished after %i seconds.' % t1)
+    '''
     return mask
+    '''
+    return mask_
+
+
+"""    
+
+from scipy.ndimage.filters import median_filter, maximum_filter
+from scipy.ndimage.measurements import maximum
+import os, tempfile, multiprocessing, shutil
+
+
+def _apply_init(output, memmap):
+    global image_, applied_
+    image_ = memmap
+    applied_ = output
+    
+def _apply(slc, func, overlap, shape_idx, kernel=None, **kwargs):
+
+    if shape_idx==1:
+        overlap = np.max((0, -slc[1].stop-overlap+image_.shape[1]))
+        slc2 = (slc[0], slice(slc[1].start, slc[1].stop+overlap))
+        applied_[slc] = func(image_[slc2], **kwargs)
+        if overlap == 0:
+            applied_[slc] = func(image_[slc2], **kwargs)
+        else:
+            applied_[slc] = func(image_[slc2], **kwargs)[:,:-overlap]
+    else:
+        overlap = np.max((0, -slc[0].stop-overlap+image_.shape[0]))
+        slc2 = (slice(slc[0].start, slc[0].stop+overlap), slc[1])
+        if overlap == 0:
+            applied_[slc] = func(image_[slc2], **kwargs)
+        else:
+            applied_[slc] = func(image_[slc2], **kwargs)[:-overlap,:]
+
+
+def apply(image, func, kernel=None, overlap=0, Nthreads=NTHREADS, **kwargs):
+            
+    tempdir = tempfile.mkdtemp()
+    pool = None
+    
+    try:      
+        output = np.memmap(os.path.join(tempdir, 'applied.dat'),
+                       shape=image.shape, dtype=image.dtype, mode='w+')
+        
+        pool = multiprocessing.Pool(Nthreads, initializer=_apply_init,
+                                    initargs=(output,image))
+        
+        shape_idx = np.argmax(image.shape)
+        
+        Nperthread = int(np.ceil(image.shape[shape_idx] / Nthreads))
+        
+        cmins = np.arange(0, image.shape[shape_idx], Nperthread)
+        cmaxs = cmins + Nperthread; cmaxs[-1] = image.shape[shape_idx]
+        
+        if shape_idx == 0:
+            slices = [(slice(cmins[i],cmaxs[i]), slice(0,image.shape[1])) for i in range(cmins.size)]
+        else:
+            slices = [(slice(0,image.shape[0]),slice(cmins[i],cmaxs[i])) for i in range(cmins.size)]
+        
+        pfunc = partial(_apply, func=func, kernel=kernel,
+                        overlap=overlap, shape_idx=shape_idx,
+                        **kwargs)
+        
+        pool.map(pfunc, slices)
+        
+    finally:
+        shutil.rmtree(tempdir)
+        if pool is not None:
+            pool.close()
+            pool.join()
+        
+    return output
+        
     
 
+def starmask(data, rms, saturate, eps, thresh, kappa, ps, medfilt_size=15,
+             maxfilt_size=25, Nthreads=NTHREADS, verbose=False, debug=False):
+    
+    if verbose: print('starmask: creating mask...')
+    t0 = time.time()
+    
+    smooth = apply(data, median_filter, size=medfilt_size, overlap=medfilt_size,
+                   Nthreads=Nthreads)
+    
+    ta = time.time() - t0
+    
+    print(ta)
+    
+    mx = apply(data, maximum_filter, size=maxfilt_size, overlap=maxfilt_size,
+               Nthreads=Nthreads)
+    
+    tb = time.time() - ta - t0
+    
+    print(tb)
 
-
-
+    C = dbscan.dbscan(data, eps=eps, ps=ps, kappa=kappa, rms=rms, thresh=thresh, lowmem=True,
+                      verbose=verbose)
+    
+    maxs = maximum(data, labels=C.segmap_dilate, index=np.arange(C.Nobjs)+1)
+    
+    bsrcs = [src for i, src in enumerate(C.sources) if maxs[i] >= saturate]
+    
+    es = [src.get_ellipse_max(C.segmap_dilate) for src in bsrcs]
+    
+    mask = mx >= saturate
+    
+    mask += masking.mask_ellipses(np.zeros_like(data, dtype='bool'), es,
+                                  rms=None, fillval=1).astype('bool')
+    
+    t1 = time.time() - t0
+    if verbose: print('starmask: finished after %i seconds' % t1)
+    
+    if debug:
+        return mask, C
+    
+    return mask
+"""

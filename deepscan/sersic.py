@@ -191,4 +191,19 @@ def magnitude(ue, re, n):
     return ueav - 2.5*np.log10( 2*np.pi*re**2 ) 
 
 
+def ue2SB0(ue, n):
+    '''
+    Convert central SB to effective SB.
+    
+    Parameters
+    ----------
+    
+    Returns
+    -------
+    
+    '''
+    b = sersic_b(n)
+    return ue - 2.5*b/np.log(10)
+
+
 

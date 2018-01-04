@@ -27,14 +27,32 @@ def read_fits(fname, read_header=False, extension=0):
         return data
 
 
-def save_to_fits(data, fname, header=None, overwrite=False, dtype=np.float32):
+def save_to_fits(data, fname, header=None, overwrite=False, dtype=None):
     
     '''Save to fits'''
     
     #Check for ofile
     if overwrite == False:
         if os.path.isfile(fname):
-            raise(IOError('File %s exists. Set overwrite=True to overwrite' % fname))
-    
+            raise(IOError('File %s exists. Set overwrite=True to overwrite.' % fname))
+            
+    if dtype is None:
+        dtype = data.dtype
+        
     hdulist = fits.PrimaryHDU(data.astype(dtype), header=header)
     hdulist.writeto(fname, overwrite=overwrite)
+    
+    
+def save_to_MEF(datas, headers, fname, overwrite=False):
+    
+    #Check if file exists
+    if overwrite == False:
+        if os.path.isfile(fname):
+            raise(IOError('File %s exists. Set overwrite=True to overwrite.' % fname))
+          
+    
+    new_hdul = fits.HDUList()
+    for data, header in zip(datas, headers):
+        new_hdul.append(fits.ImageHDU(data, header=header))
+    
+    new_hdul.writeto(fname, overwrite=overwrite)

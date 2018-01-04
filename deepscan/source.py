@@ -55,7 +55,7 @@ class Source():
         self.cslice = cslice
         self.label = label
     
-    def get_crds(self,clusters, mask=None):
+    def get_crds(self, clusters, mask=None):
         if ((self.xs is None)*(self.ys is None)):
             
             xs, ys = np.meshgrid(np.arange(self.cslice[1].start,self.cslice[1].stop),
@@ -163,15 +163,16 @@ class Source():
                 if len(Is) < minpts:
                     return None
                 break
-            
-            
+                      
         #Do some data pertubations within error to get more robust result
         if Nreps > 1:
+            
             from astropy.stats import sigma_clip
             if makeplots:
                 import matplotlib.pyplot as plt
                 plt.figure()
                 plt.errorbar(rs, Is, yerr=dIs, color='k')
+            
             popts = []
             for n in range(Nreps):
                 Is2 = np.random.normal(loc=Is, scale=dIs)
@@ -185,26 +186,51 @@ class Source():
                         plt.plot(rs2, sersic.profile(rs2, popt[0], popt[1], popt[2]), color='grey')
                 except:
                     pass
-            if len(popts) == 0:
-                return None
+            
+            if len(popts) == 0:    
+                return {'x0':None,
+                        'y0':None,
+                        'theta':None,
+                        'q':None, 
+                        'ue':None,
+                        're':None,
+                        'n':None,
+                        'mag':None,
+                        'due':None,
+                        'dre':None, 
+                        'dn':None,
+                        'dmag':None}
+        
             else:
                 #Get median clipped result
                 popts = np.vstack([popts])
-                #popt = np.median(np.vstack(popts), axis=0)
+
                 #Apply the sigma clip
-                popt = [np.median(sigma_clip(popts[:,i])) for i in range(popts.shape[1])]
+                sigcs= [sigma_clip(popts[:,i]) for i in range(popts.shape[1])]
+                popt = [np.median(sigcs[i]) for i in range(popts.shape[1])]
+                perr = [np.std(sigcs[i]) for i in range(popts.shape[1])]
                 
                 if makeplots:
                     rs2 = np.linspace(0, np.max(rs))
                     plt.plot(rs2, sersic.profile(rs2, popt[0], popt[1], popt[2]), color='r')
                     
                 #Return dictionary with result
-                mag = sersic.magnitude(popt[0], popt[1], popt[2])
-                return {'x0':e_weight.x0, 'y0':e_weight.y0, 'theta':e_weight.theta,
-                        'ue':SB.Counts2SB(popt[0],ps,mzero), 're':popt[1]*ps,
-                        'n':popt[2], 'mag':mag}
+                mag = sersic.magnitude(SB.Counts2SB(popt[0],ps,mzero), popt[1]*ps, popt[2])
                 
-                
+                return {'x0':e_weight.x0,
+                        'y0':e_weight.y0,
+                        'q':e_weight.q,
+                        'theta':e_weight.theta,
+                        'ue':SB.Counts2SB(popt[0],ps,mzero),
+                        're':popt[1]*ps,
+                        'n':popt[2],
+                        'mag':mag,
+                        'due':SB.Counts2SB(popt[0]-perr[0],ps,mzero)-SB.Counts2SB(popt[0],ps,mzero),
+                        'dre':perr[1]*ps,
+                        'dn':perr[2],
+                        'dmag':None
+                        }
+                        
         #If no repeats are necessary, do a single fit...
         else:
             if makeplots:
@@ -214,18 +240,43 @@ class Source():
             try:
                 popt, pcov = curve_fit(sersic.profile, xdata=rs, ydata=Is, sigma=dIs,
                                        p0=p0)
+                perr = np.sqrt(np.diag(pcov))
+                
                 if makeplots:
                     rs2 = np.linspace(0, np.max(rs))
                     plt.plot(rs2, sersic.profile(rs2, popt[0], popt[1], popt[2]), color='r')
                 
                 #Return dictionary with result
-                mag = sersic.magnitude(popt[0], popt[1], popt[2])
-                return {'x0':e_weight.x0, 'y0':e_weight.y0, 'theta':e_weight.theta,
-                        'ue':SB.Counts2SB(popt[0],ps,mzero), 're':popt[1]*ps,
-                        'n':popt[2], 'mag':mag}
+                mag = sersic.magnitude(SB.Counts2SB(popt[0],ps,mzero), popt[1]*ps, popt[2])
+                
+                return {'x0':e_weight.x0,
+                        'y0':e_weight.y0,
+                        'q':e_weight.q,
+                        'theta':e_weight.theta,
+                        'ue':SB.Counts2SB(popt[0],ps,mzero),
+                        're':popt[1]*ps,
+                        'n':popt[2],
+                        'mag':mag,
+                        'due':SB.Counts2SB(popt[0]-perr[0],ps,mzero)-SB.Counts2SB(popt[0],ps,mzero),
+                        'dre':perr[1]*ps,
+                        'dn':perr[2],
+                        'dmag':None
+                        }
+            
             except Exception as e:
                 print(e)
-                return None
+                return {'x0':None,
+                        'y0':None,
+                        'theta':None,
+                        'q':None, 
+                        'ue':None,
+                        're':None,
+                        'n':None,
+                        'mag':None,
+                        'due':None,
+                        'dre':None, 
+                        'dn':None,
+                        'dmag':None}
             
         
 
@@ -283,5 +334,39 @@ class Source():
                 pass
                 
             
+            
+    def make_cutout(self, data, size=None, x0=None, y0=None, wcs=None, copy=True,
+                    segmap=False, **kwargs):
+        '''
+        Make a cutout of the data.
+        
+        Parameters
+        ----------
+        
+        Returns
+        -------
+        
+        '''
+        from astropy.nddata import Cutout2D
+        
+        if size is None: 
+            size = int(np.max((self.cslice[0].stop-self.cslice[0].start,
+                               self.cslice[1].stop-self.cslice[1].start)))
+        if x0 is None:
+            x0 = int(0.5 * (self.cslice[1].start + self.cslice[1].stop))
+        else:
+            x0 = int(x0)
+        if y0 is None:
+            y0 = int(0.5 * (self.cslice[0].start + self.cslice[0].stop))
+        else:
+            y0 = int(y0)
+            
+        if segmap:
+            cutout = Cutout2D(data==self.label, (x0,y0), size, wcs=wcs, copy=copy,
+                              **kwargs)
+        else:
+            cutout = Cutout2D(data, (x0,y0), size, wcs=wcs, copy=copy, **kwargs)
+        
+        return cutout
             
         

@@ -92,10 +92,6 @@ def convolve_large(data, kernel, meshsize=None, Nthreads=None, dtype=None):
         conv_memmap = np.memmap(convfilename, dtype=dtype, mode='w+',
                                     shape=data.shape)
         
-        #Create process pool
-        pool = multiprocessing.Pool(processes=Nthreads,initializer=conv_init,
-                                    initargs=(data, conv_memmap))
-    
         #Create the chunk boundary arrays
         xmins = np.arange(0, data.shape[1], meshsize)
         xmaxs = np.arange(meshsize, data.shape[1]+meshsize, meshsize) 
@@ -104,12 +100,48 @@ def convolve_large(data, kernel, meshsize=None, Nthreads=None, dtype=None):
         bounds_list = [[xmins[i],xmaxs[i],ymins[j],ymaxs[j]]
                         for i in range(xmins.size) for j in range(ymins.size)]
         
-        #Create a function to perform the convoluton
-        pfunc = partial(perform_convolution, kernel=kernel,
-                         dshape=data.shape, R=int(np.max((kernel.shape[0], kernel.shape[1]))))                      
-        #Do the conv
-        pool.starmap(pfunc, bounds_list)
+        #R is the size of the expansion required for continuity
+        R = int(np.max((kernel.shape[0], kernel.shape[1])))
+        
+        if Nthreads > 1:
+            
+            #Create process pool
+            pool = multiprocessing.Pool(processes=Nthreads,initializer=conv_init,
+                                        initargs=(data, conv_memmap))
+                    
+            #Create a function to perform the convoluton
+            pfunc = partial(perform_convolution, kernel=kernel,
+                             dshape=data.shape, R=R)                      
+            #Do the conv
+            pool.starmap(pfunc, bounds_list)
+            
+        else:   #Single thread mode - does the same as perform_convolution
+        
+            for b in bounds_list:
+                #Expand box
+                xmax2 = b[1] + R
+                xmin2 = b[0] - R
+                ymin2 = b[2] - R
+                ymax2 = b[3] + R
                 
+                #Look for boundary overlap
+                xoverlap1 = np.max((0, -xmin2))          
+                xoverlap2 = np.max((0, xmax2-data.shape[1]))  
+                yoverlap1 = np.max((0, -ymin2))           
+                yoverlap2 = np.max((0, ymax2-data.shape[0]))  
+                
+                #Crop
+                xmax2 = int(np.min((xmax2, data.shape[1])))
+                ymax2 = int(np.min((ymax2, data.shape[0])))
+                xmin2 = int(np.max((xmin2, 0)))
+                ymin2 = int(np.max((ymin2, 0)))
+                  
+                cnv = fftconvolve(np.array(data[ymin2:ymax2,xmin2:xmax2]),
+                                                    kernel, mode='same')
+                    
+                conv_memmap[b[2]:b[3], b[0]:b[1]] = cnv[
+                                        R-yoverlap1:cnv.shape[0]-R+yoverlap2,
+                                        R-xoverlap1:cnv.shape[1]-R+xoverlap2]
     finally:
         shutil.rmtree(temppath)
         if pool is not None:
@@ -120,7 +152,8 @@ def convolve_large(data, kernel, meshsize=None, Nthreads=None, dtype=None):
         
      
 
-def convolve(data, kernel):
+def convolve(data, kernel, lowmem=False, meshsize=None, Nthreads=None,
+             dtype=None):
     '''
     Perform FFT convolution.
     
@@ -131,5 +164,12 @@ def convolve(data, kernel):
     -------
     
     '''
-    return fftconvolve(np.array(data), kernel, mode='same')
+    if dtype is None:
+        dtype = data.dtype
+        
+    if lowmem:
+        return convolve_large(data, kernel, meshsize=meshsize,
+                              Nthreads=Nthreads, dtype=dtype) 
+    else:
+        return fftconvolve(np.array(data), kernel, mode='same').astype(dtype)
                                         

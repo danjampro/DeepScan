@@ -183,10 +183,33 @@ def erode_segmap(segmap, sources, kernel, directory, Nthreads=NTHREADS):
 
 def erode_segmap(segmap, kernel, directory, meshsize, lowmem=False, Nthreads=NTHREADS,
                  fft_tol=1E-5):
+    '''
+    Perform an erosion by kernel on the segmap.
     
-    conv = convolution.convolve_large((segmap==0).astype('float32'),kernel=kernel,
-                                      Nthreads=Nthreads, meshsize=meshsize,
-                                      dtype='float32')
+    Parameters
+    ----------
+    
+    Returns
+    -------
+    
+    '''
+    if lowmem:
+        tempdir = tempfile.mkdtemp()
+        try:
+            arr = np.memmap(os.path.join(tempdir, 'temp.dat'),
+                            shape=segmap.shape, mode='w+', dtype='float32')                     
+            arr[:,:] = (segmap==0).astype('float32')
+            conv = convolution.convolve(arr, lowmem=lowmem,
+                                              kernel=kernel, Nthreads=Nthreads,
+                                              meshsize=meshsize,dtype='float32')
+        finally:
+            shutil.rmtree(tempdir)
+                                      
+            
+    else:   #High memory mode
+        conv = convolution.convolve((segmap==0).astype('float32'), dtype='float32',
+                                 kernel=kernel, lowmem=False)
+    #Housekeeping                              
     conv[:,:] = conv <= fft_tol
     conv[:,:] = conv.astype('int') * segmap
 
@@ -265,7 +288,7 @@ def dbscan_conv(data, thresh, eps, mpts, Nthreads=NTHREADS,
         
         
         t_thresh = time.time() - t0
-        print('-threshold applied after %i seconds' % t_thresh )
+        if verbose: print('-threshold applied after %i seconds' % t_thresh )
         
         
 
@@ -290,7 +313,7 @@ def dbscan_conv(data, thresh, eps, mpts, Nthreads=NTHREADS,
         
         
         ty = time.time() - t_dbscan_start
-        print('-corepoints obtained after %i seconds' % ty )
+        if verbose: print('-corepoints obtained after %i seconds' % ty )
     
         
         #Obtain the area corresponding to the secondary points + core points
@@ -307,7 +330,7 @@ def dbscan_conv(data, thresh, eps, mpts, Nthreads=NTHREADS,
             
         
         t_sec = time.time() - ty - t_dbscan_start
-        print('-secondary regions obtained after %i seconds.' % t_sec )
+        if verbose: print('-secondary regions obtained after %i seconds.' % t_sec )
                 
 
         #Do the labeling on one processor
@@ -317,7 +340,7 @@ def dbscan_conv(data, thresh, eps, mpts, Nthreads=NTHREADS,
         
         
         t_labels = time.time()-t_sec-ty-t_dbscan_start
-        print('-Regions labeled after %i seconds.' % t_labels )
+        if verbose: print('-Regions labeled after %i seconds.' % t_labels )
         
         #Label the clusters
         corepts = corepts * labeled

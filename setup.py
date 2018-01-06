@@ -9,7 +9,7 @@ Created on Sun Jun  4 13:26:24 2017
 from setuptools import setup
 
 setup(name='deepscan',
-      version='0.2',
+      version='0.33',
       description='DeepScan is a source extraction tool designed to identify very low surface brightness features in large astronomical data.',
       url='https://github.com/danjampro/DeepScan',
       author='danjampro',
@@ -22,5 +22,6 @@ setup(name='deepscan',
           'matplotlib',
           'pandas',
           'astropy',
-          'joblib'],
+          'joblib',
+          'scikit-image'],
       zip_safe=False)

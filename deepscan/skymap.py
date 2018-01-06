@@ -12,9 +12,8 @@ import numpy as np
 from scipy.interpolate import griddata, CloughTocher2DInterpolator
 from scipy.ndimage.filters import median_filter, gaussian_filter
 from skimage.restoration import inpaint
-#from functools import partial
 from multiprocessing import Pool
-from . import NTHREADS, BUFFSIZE
+from deepscan import NTHREADS, BUFFSIZE
 
 
 def _process_init(fp, interp):
@@ -38,10 +37,11 @@ def gen_spline_map(points, values, sizex, sizey, fillwidth=None, Nthreads=NTHREA
     #If a small image
     if not lowmem:
         
-        grid_x, grid_y = np.meshgrid(np.linspace(0, sizex, sizex), np.linspace(0, sizey, sizey))
+        grid_x, grid_y = np.meshgrid(np.arange(0, sizex, 1), np.arange(0, sizey, 1))
         splined = griddata(points, values, (grid_x, grid_y), method='cubic')
     
-    else:
+        
+    else: #Low memory version
         
         #Decide how big the boxes are to fill in one go
         if fillwidth is None:
@@ -49,7 +49,7 @@ def gen_spline_map(points, values, sizex, sizey, fillwidth=None, Nthreads=NTHREA
         
         #Calculate the interpolation
         interp = CloughTocher2DInterpolator(points, values)
-
+        
         #Make a temporary directory
         dirpath = tempfile.mkdtemp()  
         pool = None
@@ -75,19 +75,22 @@ def gen_spline_map(points, values, sizex, sizey, fillwidth=None, Nthreads=NTHREA
                     ymin = ny*fillwidth
                     ymax = np.min(( (ny+1)*fillwidth, sizey ))
                     bounds.append([xmin, xmax, ymin, ymax])
-                    
-            #Create thread pool
-            pool = Pool(processes=Nthreads, initializer=_process_init, initargs=(splined,interp))
-            
-            #Create partial function for gen_spline_map_partial
-            #partial_func = partial(gen_spline_map_partial, interp=interp)
-                    
-            #Map the portions to the threads - returns None as modifying the array directly
-            pool.starmap(gen_spline_map_partial, bounds)
-            
-            #Save the completed memmap 
-            #result = np.array(gcube)
-            
+                                
+            if Nthreads > 1:
+                #Create thread pool
+                pool = Pool(processes=Nthreads, initializer=_process_init, initargs=(splined,interp))
+
+                #Map the portions to the threads - returns None as modifying the array directly
+                pool.starmap(gen_spline_map_partial, bounds)
+                
+            else:   #Non-threaded case
+                for b in bounds:
+                    grid_x, grid_y = np.meshgrid(np.arange(b[0],b[1]),
+                                                 np.arange(b[2],b[3]))
+                    splined[b[2]:b[3],b[0]:b[1]] = interp(
+                            np.vstack([grid_x.reshape(grid_x.size),
+                        grid_y.reshape(grid_y.size)]).T).reshape(grid_x.shape)
+                     
         finally:
             if pool is not None:
                 pool.close()
@@ -156,7 +159,7 @@ def get_spline_data(skygrid, rmsgrid, xmins, xmaxs, ymins, ymaxs):
 
 
 def measure_sky(data, meshsize, mask=None, est_sky=np.median, est_rms=rms_quantile,
-           fillfrac=0.5, lowmem=False, Nthreads=NTHREADS):
+           fillfrac=0.5, lowmem=False, Nthreads=NTHREADS, verbose=False):
     
     '''
     Estimate the sky and RMS in meshes and interpolate.
@@ -207,7 +210,8 @@ def measure_sky(data, meshsize, mask=None, est_sky=np.median, est_rms=rms_quanti
                 rmsgrid[j,i] = est_rms(data[slc][~mask_crp])
                 
     t1 = time.time() - t0
-    print('-measure_sky: small grid filled after %i secs.' % t1)
+    if verbose: print('-measure_sky: small grid filled after %i secs.' % t1)
+    
     
     #Inpaint the nan values
     nmax = np.max(rmsgrid[~np.isnan(rmsgrid)])   #Skimage needs numbers between -1 and 1 for float image
@@ -225,7 +229,7 @@ def measure_sky(data, meshsize, mask=None, est_sky=np.median, est_rms=rms_quanti
     rmsgrid = median_filter(rmsgrid, 3)
     
     t2 = time.time() - t1 - t0
-    print('-measure_sky: small grid filtered after %i secs.' % t2)
+    if verbose: print('-measure_sky: small grid filtered after %i secs.' % t2)
     
     #Accounting for out of bounds interpolation
     xmins[0] = 0; xmins[-1]=data.shape[1]
@@ -233,22 +237,26 @@ def measure_sky(data, meshsize, mask=None, est_sky=np.median, est_rms=rms_quanti
     ymins[0] = 0; ymins[-1]=data.shape[0]
     ymaxs[0] = 0; ymaxs[-1]=data.shape[0]
     
+    #Get the data for spline
     points, values_b, values_n = get_spline_data(bggrid, rmsgrid, xmins, xmaxs,
                                                  ymins, ymaxs) 
-    ndata = gen_spline_map(points, values_n, data.shape[1], data.shape[0], lowmem=lowmem,Nthreads=Nthreads)
-    bdata = gen_spline_map(points, values_b, data.shape[1], data.shape[0], lowmem=lowmem,Nthreads=Nthreads)
-    ndata[ndata<0] = 0 #Account for negative RMS
+    #Create the splines
+    ndata = gen_spline_map(points, values_n, data.shape[1], data.shape[0],lowmem=lowmem,Nthreads=Nthreads)
+    bdata = gen_spline_map(points, values_b, data.shape[1], data.shape[0],lowmem=lowmem,Nthreads=Nthreads)
+    
+    #Account for negative RMS
+    ndata[ndata<0] = 0 
     
     t3 = time.time() - t2 - t1 - t0
-    print('-measure_sky: full grid filled after %i secs.' % t3)
+    if verbose: print('-measure_sky: full grid filled after %i secs.' % t3)
     
     return bdata, ndata
 
 
 
 def create_skymask(data, meshsize, sigma=5, its=5, sigma_clip=3, 
-                   tol=1.05, verbose=False, lowmem=False, mask=False, **kwargs):
-    
+                   tol=1.05, verbose=False, lowmem=False, mask=False,
+                   Nthreads=NTHREADS, **kwargs):
     '''
     Create a source mask by iteritively rejecting high SNR peaks on smoothed
     image.
@@ -262,7 +270,9 @@ def create_skymask(data, meshsize, sigma=5, its=5, sigma_clip=3,
     '''
     #Get the initial crude estimate for masking 
     smooth = gaussian_filter(data, sigma)
-    bgvs, rmsvs = measure_sky(smooth, meshsize=meshsize, lowmem=lowmem, **kwargs)
+        
+    bgvs, rmsvs = measure_sky(smooth, meshsize=meshsize, lowmem=lowmem,
+                              Nthreads=Nthreads, **kwargs, verbose=verbose)
     
     if lowmem:
         mask_s = np.zeros_like(data, dtype='bool')
@@ -281,7 +291,7 @@ def create_skymask(data, meshsize, sigma=5, its=5, sigma_clip=3,
     
         #Do a repeat with the mask in place
         bgvs, rmsvs = measure_sky(smooth, meshsize=meshsize, mask=mask_s, lowmem=lowmem,
-                                  **kwargs)
+                                  Nthreads=Nthreads, verbose=verbose, **kwargs)
         
         if lowmem:
             mask_s = np.zeros_like(data, dtype='bool')
@@ -301,7 +311,7 @@ def create_skymask(data, meshsize, sigma=5, its=5, sigma_clip=3,
             break
         masked_area = masked_area_
         
-        if i==its-2:
+        if (i==its-2):
             print('-WARNING: skymap source mask did not converge.')
         
     return mask_s
@@ -309,7 +319,7 @@ def create_skymask(data, meshsize, sigma=5, its=5, sigma_clip=3,
 
 
 def skymap(data, meshsize_initial, meshsize_final, mask_init=False, makeplots=False, 
-           verbose=True, lowmem=False, **kwargs):
+           verbose=True, lowmem=False, Nthreads=NTHREADS, **kwargs):
     
     '''
     Create background and RMS maps.
@@ -324,15 +334,14 @@ def skymap(data, meshsize_initial, meshsize_final, mask_init=False, makeplots=Fa
     
     t0 = time.time()
     
-    if verbose:
-        print('skymap: creating source mask...')
+    if verbose: print('skymap: creating source mask...')
     mask = create_skymask(data, meshsize_initial, verbose=verbose, 
-                          lowmem=lowmem, mask=mask_init, **kwargs)
+                          lowmem=lowmem, mask=mask_init, Nthreads=Nthreads,
+                          **kwargs)
     
-    if verbose:
-        print('skymap: measuring sky...')
+    if verbose: print('skymap: measuring sky...')
     sky, rms = measure_sky(data, meshsize_final, mask=mask, lowmem=lowmem,
-                           **kwargs)
+                           Nthreads=Nthreads, verbose=verbose, **kwargs)
     
     if makeplots:
         import matplotlib.pyplot as plt
@@ -343,7 +352,7 @@ def skymap(data, meshsize_initial, meshsize_final, mask_init=False, makeplots=Fa
         plt.figure(); plt.imshow(rms); plt.title('RMS')
         
     t1 = time.time() - t0
-    print('skymap: finished after %i seconds.' % t1)
+    if verbose: print('skymap: finished after %i seconds.' % t1)
 
     return sky, rms   
     

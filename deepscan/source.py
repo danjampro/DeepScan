@@ -100,6 +100,19 @@ class Source():
         from scipy.optimize import curve_fit
         from . import sersic
         
+        default_return = {'x0':None,
+                        'y0':None,
+                        'theta':None,
+                        'q':None, 
+                        'ue':None,
+                        're':None,
+                        'n':None,
+                        'mag':None,
+                        'due':None,
+                        'dre':None, 
+                        'dn':None,
+                        'dmag':None}
+        
         #Get weighted ellipse
         e_weight = self.get_ellipse_rms_weighted(data, segmap, **kwargs)
         e_weight.x0 = int(e_weight.x0)
@@ -161,7 +174,7 @@ class Source():
             if r >= Rmax:
                 print('WARNING: maximum radius has been reached.')
                 if len(Is) < minpts:
-                    return None
+                    return default_return
                 break
                       
         #Do some data pertubations within error to get more robust result
@@ -188,18 +201,7 @@ class Source():
                     pass
             
             if len(popts) == 0:    
-                return {'x0':None,
-                        'y0':None,
-                        'theta':None,
-                        'q':None, 
-                        'ue':None,
-                        're':None,
-                        'n':None,
-                        'mag':None,
-                        'due':None,
-                        'dre':None, 
-                        'dn':None,
-                        'dmag':None}
+                return default_return
         
             else:
                 #Get median clipped result
@@ -265,18 +267,7 @@ class Source():
             
             except Exception as e:
                 print(e)
-                return {'x0':None,
-                        'y0':None,
-                        'theta':None,
-                        'q':None, 
-                        'ue':None,
-                        're':None,
-                        'n':None,
-                        'mag':None,
-                        'due':None,
-                        'dre':None, 
-                        'dn':None,
-                        'dmag':None}
+                return default_return
             
         
 

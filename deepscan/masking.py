@@ -44,7 +44,10 @@ def mask_ellipses(data, ellipses, rms, Nthreads=NTHREADS, buffsize=BUFFSIZE, fil
         pool.starmap(mask_ellipse, [[e] for e in ellipses])    
                        
     finally:
-        shutil.rmtree(temppath)
+        try:
+            shutil.rmtree(temppath)
+        except:
+            print('shutil.rmtree error: Unable to remove %s.' % temppath)
         if pool is not None:
             pool.close()
             pool.join()

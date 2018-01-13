@@ -95,8 +95,11 @@ def gen_spline_map(points, values, sizex, sizey, fillwidth=None, Nthreads=NTHREA
             if pool is not None:
                 pool.close()
                 pool.join()
-            #del gcube
-            shutil.rmtree(dirpath)
+            
+            try:
+                shutil.rmtree(dirpath)
+            except:
+                print('shutil.rmtree error: Unable to remove %s.' % dirpath)
             
     return splined
 

@@ -143,7 +143,12 @@ def convolve_large(data, kernel, meshsize=None, Nthreads=None, dtype=None):
                                         R-yoverlap1:cnv.shape[0]-R+yoverlap2,
                                         R-xoverlap1:cnv.shape[1]-R+xoverlap2]
     finally:
-        shutil.rmtree(temppath)
+        
+        try:
+            shutil.rmtree(temppath)
+        except:
+            print('shutil.rmtree error: Unable to remove %s.' % temppath)
+            
         if pool is not None:
             pool.close()
             pool.join()

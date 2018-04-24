@@ -8,8 +8,7 @@ Created on Mon Dec  4 14:57:35 2017
 
 import numpy as np
 from . import NTHREADS, BUFFSIZE
-import os, tempfile, shutil, multiprocessing
-from multiprocessing import Process
+import io, os, tempfile, multiprocessing
 
 #==============================================================================
 
@@ -31,27 +30,22 @@ def mask_ellipses(data, ellipses, rms, Nthreads=NTHREADS, buffsize=BUFFSIZE, fil
     -------
     
     '''
-    temppath = tempfile.mkdtemp()
-    pool = None
-    try:
-        
-        #Make a memmap array and save to temp file
-        data2 = np.memmap(os.path.join(temppath, 'temp.dat'), dtype='float32', mode='w+', shape=data.shape)
-        data2[:,:] = data[:,:] #Fill the new array with the data
-                               
-        #Generate the mask in parallel
-        pool = multiprocessing.Pool(processes=Nthreads, initializer=process_init, initargs=(data2, rms, fillval, buffsize))
-        pool.starmap(mask_ellipse, [[e] for e in ellipses])    
-                       
-    finally:
+    with tempfile.TemporaryDirectory() as temppath:
+        pool = None
         try:
-            shutil.rmtree(temppath)
-        except:
-            print('shutil.rmtree error: Unable to remove %s.' % temppath)
-        if pool is not None:
-            pool.close()
-            pool.join()
-    
+            
+            #Make a memmap array and save to temp file
+            data2 = np.memmap(os.path.join(temppath, 'temp.dat'), dtype='float32', mode='w+', shape=data.shape)
+            data2[:,:] = data[:,:] #Fill the new array with the data
+                                   
+            #Generate the mask in parallel
+            pool = multiprocessing.Pool(processes=Nthreads, initializer=process_init, initargs=(data2, rms, fillval, buffsize))
+            pool.starmap(mask_ellipse, [[e] for e in ellipses])    
+                           
+        finally:
+            if pool is not None:
+                pool.close()
+                pool.join()     
     return data2
 
 
@@ -59,7 +53,7 @@ def mask_ellipses(data, ellipses, rms, Nthreads=NTHREADS, buffsize=BUFFSIZE, fil
 def mask_ellipse(ellipse):
     
     '''Mask a single ellipse'''
-           
+    
     #Define semi-major axis of masking ellipse
     Rmax = ellipse.a
                    
@@ -72,12 +66,16 @@ def mask_ellipse(ellipse):
     xmax = xmin + boxshape[1]
     ymax = ymin + boxshape[0]
     
+    if (ymax<=0) or (xmax<=0) or (ymin>data_arr.shape[0]) or (
+                                                    xmin>data_arr.shape[1]):
+        return None
+    
     #Select region for masking
     xmin_real = int( np.max((xmin,0)) )
     xmax_real = int( np.min((xmax, data_arr.shape[1])) )
     ymin_real = int( np.max((ymin,0)) )
     ymax_real = int( np.min((ymax, data_arr.shape[0])) )
-    
+        
     #Calculate size of array
     nbytes = (ymax_real-ymin_real)*(xmax_real-xmin_real)*data_arr.dtype.itemsize
     if nbytes <= buffsize_:
@@ -211,8 +209,51 @@ def _fill_noise(data, mask, sky, rms, bounds_list):
                 data[bounds.ymin:bounds.ymax,
                      bounds.xmin:bounds.xmax][mask_crp] += sky[mask_crp]
                  
-            
 
+def apply_mask(data, mask, rms=None, sky=None, fillval=1, buffsize=None,
+               memmap=True, dtype=None):
+               
+    if buffsize is None:
+        buffsize = int(io.DEFAULT_BUFFER_SIZE / data.dtype.itemsize)
+    else:
+        buffsize=int(buffsize)
+    
+    if dtype is None:
+        dtype = data.dtype
+        
+    if sky is None:
+        sky = 0
+    
+    if memmap:
+        tfile = tempfile.NamedTemporaryFile(delete=True)
+        masked = np.memmap(tfile.name, dtype=dtype, mode='w+', shape=data.shape)
+        masked[:,:] = data[:,:]
+    else:
+        masked = data.copy()
+    
+    masked = masked.reshape(data.size)
+    mask = mask.reshape(data.size)
+    
+    if rms is None:
+        for seg in np.arange(0,data.size+buffsize,buffsize):
+            masked[seg:seg+buffsize][mask[seg:seg+buffsize]==1] = fillval
+    else:
+        rms = rms.reshape(data.size)
+        if hasattr(sky, '__len__'):
+            for seg in np.arange(0,data.size+buffsize,buffsize):
+                masked[seg:seg+buffsize][mask[seg:seg+buffsize]==1
+                       ] = np.random.normal(sky[seg:seg+buffsize][mask[
+                               seg:seg+buffsize]==1]
+                    ,rms[seg:seg+buffsize][mask[seg:seg+buffsize]==1]) 
+        else:
+            for seg in np.arange(0,data.size+buffsize,buffsize):
+                masked[seg:seg+buffsize][mask[seg:seg+buffsize]==1
+                       ] = np.random.normal(sky,rms[seg:seg+buffsize][mask[
+                               seg:seg+buffsize]==1]) 
+    
+    return masked.reshape(data.shape)
+
+"""
 def apply_mask(data, mask, rms, sky=None, boxwidth=None, Nthreads=NTHREADS):
     '''
     Apply the mask to data, returning a masked copy. Will fill with RMS if provided.
@@ -266,5 +307,6 @@ def apply_mask(data, mask, rms, sky=None, boxwidth=None, Nthreads=NTHREADS):
         tfile.close()
         
     return data2
+"""
 
 #==============================================================================

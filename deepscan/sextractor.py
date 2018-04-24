@@ -13,7 +13,8 @@ from . import utils, geometry, sersic, NTHREADS
 
 def sextract(data, mzero, ps, flux_frac=0.5, detect_thresh=1.5, 
              detect_minarea=5, deblend_mincont=0.005, clean=True, convolve=True,
-             kernel=None, extras='', verbose=True, bgsize=64, sexpath='sex'):
+             kernel=None, extras='', verbose=True, bgsize=64, sexpath='sex',
+             segmap=False):
             
     t0 = time.time()
     
@@ -35,7 +36,12 @@ def sextract(data, mzero, ps, flux_frac=0.5, detect_thresh=1.5,
             param.write('X_IMAGE\nY_IMAGE\nMAG_AUTO\nFLUX_RADIUS\nA_IMAGE\n\
                         B_IMAGE\nTHETA_IMAGE\nMAG_ISO\nKRON_RADIUS\nFLUX_MAX\n\
                         ISOAREA_IMAGE\nXMAX_IMAGE\nXMIN_IMAGE\nYMAX_IMAGE\n\
-                        YMIN_IMAGE')
+                        YMIN_IMAGE\n')
+            
+        #Decide whether to save segimage
+        if segmap:
+            segname = os.path.join(dirpath, 'seg1.fits')
+            extras = '%s -CHECKIMAGE_NAME %s -CHECKIMAGE_TYPE SEGMENTATION' % (extras, segname)
             
         #Convert the bools to Y or Ns
         if clean:
@@ -58,7 +64,7 @@ def sextract(data, mzero, ps, flux_frac=0.5, detect_thresh=1.5,
             
         #Create a string to override default parameters 
         ofile = os.path.join(dirpath, 'output.cat')
-        s = '-PHOT_FLUXFRAC %.3f -MAG_ZEROPOINT %.3f -PIXEL_SCALE %.3f -CATALOG_NAME %s -PARAMETERS_NAME %s -FILTER_NAME %s -DETECT_THRESH %s -DETECT_MINAREA %.5f -DEBLEND_MINCONT %i -CLEAN %s -FILTER %s -BACK_FITLERSIZE % i %s' % \
+        s = '-PHOT_FLUXFRAC %.3f -MAG_ZEROPOINT %.3f -PIXEL_SCALE %.3f -CATALOG_NAME %s -PARAMETERS_NAME %s -FILTER_NAME %s -DETECT_THRESH %s -DETECT_MINAREA %.5f -DEBLEND_MINCONT %i -CLEAN %s -FILTER %s -BACK_SIZE % i %s' % \
         (flux_frac, mzero, ps, ofile, param_name, convfile, detect_thresh,
          detect_minarea, deblend_mincont, clean, convolve, bgsize, extras)
         
@@ -72,6 +78,12 @@ def sextract(data, mzero, ps, flux_frac=0.5, detect_thresh=1.5,
         t1 = time.time() - t0
         if verbose:
             print('-sextractor: finished after %i seconds.' % t1)
+        
+        #Return dataframe + segmap
+        if segmap:
+            segmap = utils.read_fits(segname)
+            os.remove(segname)
+            return read_output(ofile), segmap
         
         #Read the parameters into a pandas dataframe
         return read_output(ofile)
@@ -199,12 +211,28 @@ def get_ellipses(data, mzero, ps, uiso, mask=None, fillval=0, verbose=True,
     ellipses = ellipses_iso(dfsex, uiso, ps, Nthreads=Nthreads)
     
     #Clean result of nan values
-    ellipses = [e for e in ellipses if np.isfinite(e.a)]
+    keepers = np.isfinite([e.a for e in ellipses])
+    keepers *= np.array([e.a > 0 for e in ellipses],dtype='bool')
+    keepers *= dfsex['MAG_AUTO'].as_matrix() < 99
+    
+    dfsex2 = pd.DataFrame()
+    for col in dfsex.columns.values:
+        dfsex2[col] = dfsex[col].as_matrix()[keepers]
+    ellipses = [e for i, e in enumerate(ellipses) if keepers[i]]
     
     t1 = time.time() - t0
     print('get_ellipses: finished after %i seconds.' % t1)
     
     if debug:
-        return ellipses, dfsex
+        return ellipses, dfsex2
     return ellipses
+
+
+
+
+
+
+
+    
+    
       

@@ -56,7 +56,12 @@ def dilate_large(mask, dilation_kernel, tol=1E-5, **kwargs):
 
 
 
-def measure_average_flux(data, x0, y0, r0, dr, mask=None, estimator=np.median):
+def estimator_sigclip(data, sigma=3):
+    from astropy.stats import sigma_clip
+    return np.mean(sigma_clip(data, sigma))
+    
+def measure_average_flux(data, x0, y0, r0, dr, mask=None,
+                                                 estimator=estimator_sigclip):
     '''
     Calculate the average flux within an annulus.
     

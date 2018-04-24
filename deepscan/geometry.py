@@ -8,75 +8,48 @@ Created on Mon Sep 25 11:19:22 2017
 
 import numpy as np
 import matplotlib.pyplot as plt
+from shapely.geometry import Point
+from shapely.geometry.polygon import Polygon
 
 #==============================================================================
 
-class box():
-    def __init__(self, xmin, xmax, ymin, ymax,x0=None,y0=None):
-        self.xmin = xmin
-        self.ymin = ymin
-        self.xmax = xmax
-        self.ymax = ymax
-        if x0 is None:
-            x0 = (xmax + xmin) / 2
-        if y0 is None:
-            y0 = (ymax + ymin) / 2
-        self.x0 = x0
-        self.y0 = y0
-            
-    def fill(self, data, fillval=1):
-        data[self.ymin:self.ymax,self.xmin:self.xmax] = fillval
-        return data
+class Box():
     
-    def draw(self, ax=None):
+    def __init__(self, tl,tr,br,bl,frame=None):
+        self.tl = tl
+        self.tr = tr
+        self.br = br
+        self.bl = bl
+        self.vertices = [tl,tr,br,bl]
+        self.frame=frame
+        self.polygon = Polygon([self.tl, self.tr, self.br, self.bl])
+    
+    def draw(self, ax=None, color='k', frame=False, **kwargs):
         if ax is None:
             ax = plt.gca()
-        ax.plot([self.xmin, self.xmax], [self.ymin, self.ymin], 'b-')
-        ax.plot([self.xmin, self.xmax], [self.ymax, self.ymax], 'b-')
-        ax.plot([self.xmin, self.xmin], [self.ymin, self.ymax], 'b-')
-        ax.plot([self.xmax, self.xmax], [self.ymin, self.ymax], 'b-')
-        
-    def check_inside(self, x, y):
-        return (x < self.xmax) * (x >= self.xmin) * (y < self.ymax) * (y >= self.ymin)
-  
+        ax.plot([self.tl[0],self.tr[0]], [self.tl[1],self.tr[1]],
+                                                    color=color, **kwargs)
+        ax.plot([self.tr[0],self.br[0]], [self.tr[1],self.br[1]],
+                                                    color=color, **kwargs)
+        ax.plot([self.br[0],self.bl[0]], [self.br[1],self.bl[1]],
+                                                    color=color, **kwargs)
+        ax.plot([self.bl[0],self.tl[0]], [self.bl[1],self.tl[1]],
+                                                    color=color, **kwargs)
+        if frame:
+            if self.frame is not None:
+                plt.text(self.tl[0], self.tl[1], s=self.frame, color=color,
+                         fontsize=5)
+                
+    def check_inside(self, xs, ys):
+        return np.array([self.polygon.contains(Point(p)) for p in zip(xs,ys)])
     
-#==============================================================================
-'''
-class rectangle():
+    def count_inside(self, xs, ys, maskfrac=0):
+        return np.sum(self.check_inside(xs, ys)) * (1.-maskfrac)
     
-    def __init__(self, x0, y0, theta, width, height):
-        self.x0 = x0
-        self.y0 = y0
-        self.theta = theta
-        self.width = width
-        self.height = height
-        self.slc = (slice(int(np.floor(-0.5*height*np.sin(theta)+y0)),
-                          int(np.ceil(0.5*height*np.sin(theta)+y0))),
-                    slice(int(np.floor(-0.5*width*np.cos(theta)+x0)),
-                          int(np.ceil(0.5*width*np.cos(theta)+x0))))
-        self.m1a = 
-        
-    def fill(self, data, fillval=1):
-        cond = np.zeros((self.slc[0].stop-self.slc[0].start,
-                         self.slc[1].stop-self.slc[1].start), dtype='bool')
-        
-        data[self.ymin:self.ymax,self.xmin:self.xmax] = fillval
-        return data
     
-    def draw(self, ax=None):
-        if ax is None:
-            ax = plt.gca()
-        ax.plot([self.xmin, self.xmax], [self.ymin, self.ymin], 'b-')
-        ax.plot([self.xmin, self.xmax], [self.ymax, self.ymax], 'b-')
-        ax.plot([self.xmin, self.xmin], [self.ymin, self.ymax], 'b-')
-        ax.plot([self.xmax, self.xmax], [self.ymin, self.ymax], 'b-')
-        
-    def check_inside(self, x, y):
-        return (x < self.xmax) * (x >= self.xmin) * (y < self.ymax) * (y >= self.ymin)
-'''
 #==============================================================================
 
-class ellipse():
+class Ellipse():
     
     def __init__(self, a=1, b=1, theta=0, x0=0, y0=0):
         
@@ -96,17 +69,10 @@ class ellipse():
         #Translate ellipse to origin
         x = x - self.x0
         y = y - self.y0
-        
-        #Rotate ellipse to have semi-major axis aligned with y-axis
-        #y2 = x*np.cos(-self.theta) - y*np.sin(-self.theta)
-        #x2 = y*np.cos(-self.theta) + x*np.sin(-self.theta)
-        
+                
         y2 = x*np.cos(-self.theta) - y*np.sin(-self.theta) 
         x2 = y*np.cos(-self.theta) + x*np.sin(-self.theta) 
-               
-        #A = ( x2/self.b )**2 
-        #B = ( y2/self.a )**2 
-        
+                       
         A = ( y2/self.b )**2 
         B = ( x2/self.a )**2 
             
@@ -122,10 +88,7 @@ class ellipse():
         phi = np.linspace(0, 2*np.pi)
         x = self.a * np.cos(phi) 
         y = self.b * np.sin(phi)
-                
-        #x2 = x*np.cos(self.theta) - y*np.sin(self.theta) + self.x0
-        #y2 = y*np.cos(self.theta) + x*np.sin(self.theta) + self.y0
-        
+                        
         y2 = x*np.cos(-self.theta) - y*np.sin(-self.theta) + self.y0
         x2 = y*np.cos(-self.theta) + x*np.sin(-self.theta) + self.x0
         
@@ -133,13 +96,95 @@ class ellipse():
         
         
     def rescale(self, factor):
-        return ellipse(a=factor*self.a, b=factor*self.b, theta=self.theta, x0=self.x0, y0=self.y0)
+        return Ellipse(a=factor*self.a, b=factor*self.b, theta=self.theta, x0=self.x0, y0=self.y0)
     
+    
+    
+def fit_ellipse(xs,ys,weights=None,rms=False,x0=None,y0=None):
+    
+    '''
+    Fit ellipse to data.
+    
+    Parameters
+    ----------
+    
+    Returns
+    -------
+    
+    '''
+    if weights is None:
+        weights = np.ones(len(xs))
+        
+    #First order moments
+    if x0 is None:
+        x0 = np.average(xs,weights=weights)
+    if y0 is None:
+        y0 = np.average(ys,weights=weights)
+        
+    #Second order moments
+    x2 = np.sum( (xs-x0)**2 * weights ) / np.sum(weights)
+    y2 = np.sum( (ys-y0)**2 * weights ) / np.sum(weights)
+    xy = np.sum( (ys-y0)*(xs-x0) * weights ) / np.sum(weights)
+    
+    #Handle infinitely thin detections
+    if x2*y2 - xy**2 < 1./144:
+        x2 += 1./12
+        y2 += 1./12
+    
+    #Calculate position angle
+    theta = np.sign(xy) * 0.5*abs( np.arctan2(2*xy, x2-y2) ) + np.pi/2
+    
+    #Calculate the semimajor & minor axes
+    
+    c1 = 0.5*(x2+y2)
+    c2 = np.sqrt( ((x2-y2)/2)**2 + xy**2 )
+    arms = np.sqrt( c1 + c2 )
+    brms = np.sqrt( c1 - c2 )
+
+    if not rms:
+        dmax = np.sqrt( np.max( ((xs-x0)**2+(ys-y0)**2) ) )
+        dmax = np.max((dmax, 1)) #Account for 1-pixel detections
+        bmax = (brms/arms)*dmax   
+        return Ellipse(x0=x0,y0=y0,a=dmax,b=bmax,theta=theta)
+
+    return Ellipse(x0=x0,y0=y0,a=arms,b=brms,theta=theta)
+
+
 #==============================================================================
 
+
+class Anulus():
+    def __init__(self, x0, y0, r1, r2, theta=0, q=1):
+        eas = [Ellipse(x0=x0,y0=y0,a=r,b=q*r,theta=theta
+                                                    ) for r in [r1,r2]]
+        self.e1 = eas[np.argmin([r1,r2])]
+        self.e2 = eas[np.argmax([r1,r2])]
+        
+        self.area = np.pi * ((self.e2.a*self.e2.b) - (self.e1.a*self.e1.b))
+        
+        self.Nobjs = None
+        
+    def draw(self, ax=None, color='k', **kwargs):
+        if ax is None:
+            ax = plt.gca()
+        self.e1.draw(color=color, **kwargs)
+        self.e2.draw(color=color, **kwargs)
+        
+    def check_inside(self, x, y):
+        return (~self.e1.check_inside(x, y)) * self.e2.check_inside(x, y)
+        
+    def count_objects(self, xs, ys):
+        self.Nobjs = np.sum(self.check_inside(xs,ys))
+        return self.Nobjs
+
+#==============================================================================
+    
 def unit_tophat(radius):
     '''Return a tophat kernel array of unit height'''
     from astropy.convolution import Tophat2DKernel
     kernel = Tophat2DKernel(radius).array
     kernel[kernel!=0] = 1
     return kernel
+
+
+ellipse = Ellipse

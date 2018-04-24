@@ -11,7 +11,7 @@ from astropy.io import fits
 import os
 
 
-def read_fits(fname, read_header=False, extension=0):
+def read_fits(fname, read_header=False, extension=0, dtype=None):
     
     '''Read fits data'''
     
@@ -19,6 +19,9 @@ def read_fits(fname, read_header=False, extension=0):
     hdulist = fits.open(fname)
     data = hdulist[int(extension)].data
     hdulist.close()
+    
+    if dtype is not None:
+        data = data.astype(dtype)
     
     if read_header:
         header = hdulist[int(extension)].header
@@ -38,6 +41,10 @@ def save_to_fits(data, fname, header=None, overwrite=False, dtype=None):
             
     if dtype is None:
         dtype = data.dtype
+    
+    if dtype == 'bool':
+        print('WARNING: Converting bool to int16.')
+        dtype = 'int16'
         
     hdulist = fits.PrimaryHDU(data.astype(dtype), header=header)
     hdulist.writeto(fname, overwrite=overwrite)

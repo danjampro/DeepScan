@@ -240,16 +240,31 @@ class Clustered():
 #==============================================================================
 
 
-def dbscan(data, eps, kappa, thresh, rms, ps, verbose=True, mask=None,
-           mask_type='rms', sky=None, **kwargs):
+def dbscan(data, eps, thresh, rms, ps, verbose=True, mask=None,
+           mask_type='rms', sky=None, mpts=None, kappa=None, **kwargs):
     '''
     Run DBSCAN.
     
     Paramters
     ---------
+    data: input data (2D numpy array)
+    
+    eps: Clustering radius (ps units)
+    
+    thresh: (SNR pixel threshold for clustering)
+    
+    ps: pixel scale 
+    
+    kappa: confidence parameter
+    
+    mpts: DBSCAN min points parameter. Overrides automatic derivation using kappa.
+    
+    mask_type: 'rms' or 'zeros': How should the mask be applied?
     
     Returns
     -------
+    
+    C: A Clustered object
     
     '''
     t0 = time.time()
@@ -267,7 +282,8 @@ def dbscan(data, eps, kappa, thresh, rms, ps, verbose=True, mask=None,
     
     eps = eps/ps
     
-    mpts = minpts.estimate_minpts(eps=eps, kappa=kappa, tmin=thresh, rms=1)
+    if mpts is None:
+        mpts = minpts.estimate_minpts(eps=eps, kappa=kappa, tmin=thresh, rms=1)
     
     if verbose: print('dbscan: performing clustering...')
     

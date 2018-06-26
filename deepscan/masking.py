@@ -19,9 +19,10 @@ def process_init(output_memmap, rms, fillval, buffsize):
     fillval_arr = fillval
     buffsize_ = buffsize
     
-def mask_ellipses(data, ellipses, rms, Nthreads=NTHREADS, buffsize=BUFFSIZE, fillval=0):
+def mask_ellipses(data, ellipses, Nthreads=NTHREADS, buffsize=BUFFSIZE,
+                  rms=None, fillval=1):
     '''
-    Make ellipses, returning memmap.
+    Make ellipses.
     
     Parameters
     ----------
@@ -40,7 +41,7 @@ def mask_ellipses(data, ellipses, rms, Nthreads=NTHREADS, buffsize=BUFFSIZE, fil
                                    
             #Generate the mask in parallel
             pool = multiprocessing.Pool(processes=Nthreads, initializer=process_init, initargs=(data2, rms, fillval, buffsize))
-            pool.starmap(mask_ellipse, [[e] for e in ellipses])    
+            pool.starmap(mask_ellipse_, [[e] for e in ellipses])    
                            
         finally:
             if pool is not None:
@@ -50,9 +51,9 @@ def mask_ellipses(data, ellipses, rms, Nthreads=NTHREADS, buffsize=BUFFSIZE, fil
 
 
 
-def mask_ellipse(ellipse):
+def mask_ellipse_(ellipse):
     
-    '''Mask a single ellipse'''
+    '''Mask a single ellipse - memmap'd'''
     
     #Define semi-major axis of masking ellipse
     Rmax = ellipse.a
@@ -138,7 +139,27 @@ def mask_ellipse(ellipse):
                         data_arr[ys,xs] = np.random.normal(loc=0, scale=rms_arr[ys,xs])
                     else:
                         data_arr[ys,xs] = np.random.normal(loc=0, scale=rms_arr, size=1)   
-                        
+ 
+
+def mask_ellipses2(shape, es, fillvals, dtype='int'):
+    mask = np.zeros(shape, dtype=dtype)
+    for i, e in enumerate(es):
+        Rmax = e.a                       
+        boxshape = (2*Rmax+1, 2*Rmax+1)        
+        xmin = int(e.x0) - int(boxshape[1]/2)
+        ymin = int(e.y0) - int(boxshape[0]/2)
+        xmax = xmin + boxshape[1]
+        ymax = ymin + boxshape[0]
+        xmin = int( np.max((xmin,0)) )
+        xmax = int( np.min((xmax, shape[1])) )
+        ymin = int( np.max((ymin,0)) )
+        ymax = int( np.min((ymax, shape[0])) )
+        xs, ys = np.meshgrid(np.arange(xmin, xmax),np.arange(ymin, ymax)) 
+        bools = e.check_inside(xs, ys)
+        mask[ymin:ymax, xmin:xmax][bools] = fillvals[i] 
+    return mask
+        
+                     
 #==============================================================================
 
 
@@ -252,61 +273,5 @@ def apply_mask(data, mask, rms=None, sky=None, fillval=1, buffsize=None,
                                seg:seg+buffsize]==1]) 
     
     return masked.reshape(data.shape)
-
-"""
-def apply_mask(data, mask, rms, sky=None, boxwidth=None, Nthreads=NTHREADS):
-    '''
-    Apply the mask to data, returning a masked copy. Will fill with RMS if provided.
-    
-    Parameters
-    ----------
-    
-    Returns
-    -------
-    
-    '''
-    #Calculate the size of the buffer region
-    if boxwidth is None:
-        boxwidth = int( BUFFSIZE / data.dtype.itemsize )
-    
-    #Make a temporary memmap array 
-    tfile = tempfile.NamedTemporaryFile(delete=True)
-    
-    try:
-        
-        #Create the memmap and fill with data
-        data2 = np.memmap(tfile.name, dtype='float32', mode='w+', shape=data.shape)
-        data2[:,:] = data[:,:]
-            
-        #Replace masked pixels with noise        
-        #Calculate number of R*R regions in data
-        Nregions = data.size / (boxwidth**2)
-        
-        #Get the number of regions per thread
-        N_per_thread = int(np.floor( Nregions / NTHREADS ))
-        
-        #Generate the mask in parallel
-        pgroup = []
-        for n in range(Nthreads):
-            
-            #Get the boundaires for this thread 
-            bounds_list = _get_bounds(Nthreads, N_per_thread, boxwidth, data.shape, thread_ID=n)
-            
-            #Run the replacement program
-            pgroup.append(Process(target=_fill_noise, args=(data2, 
-                                                             mask,
-                                                             sky,
-                                                             rms, 
-                                                             bounds_list)))
-            pgroup[-1].start()
-        for p in pgroup:
-            p.join()
-    
-    #Remove the temporary file
-    finally:
-        tfile.close()
-        
-    return data2
-"""
 
 #==============================================================================

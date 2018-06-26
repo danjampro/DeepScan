@@ -1,29 +1,13 @@
-# README #
+Version: 0.52
 
-This README would normally document whatever steps are necessary to get your application up and running.
+DeepScan is a tool designed to detect extended low surface brightness features in astronomical data.
 
-### What is this repository for? ###
+Installation:
 
-* Quick summary
-* Version
-* [Learn Markdown](https://bitbucket.org/tutorials/markdowndemo)
+pip install deepscan
 
-### How do I get set up? ###
+Contact:
 
-* Summary of set up
-* Configuration
-* Dependencies
-* Database configuration
-* How to run tests
-* Deployment instructions
+Dan Prole (proled@cardiff.ac.uk)
 
-### Contribution guidelines ###
-
-* Writing tests
-* Code review
-* Other guidelines
-
-### Who do I talk to? ###
-
-* Repo owner or admin
-* Other community or team contact
+Notes: I intent to upload some examples in the future. If you are interested in the code before then, please contact me. Also If you have suggestions then let me know.

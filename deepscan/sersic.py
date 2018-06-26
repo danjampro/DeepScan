@@ -55,10 +55,16 @@ def sersic_b(n):
     float:
         Sersic b value.
     '''
-    
-    b = gammaincinv( 2*n, 0.5 ) 
-    
-    return b
+    if hasattr(n, '__len__'):
+        n = np.array(n, dtype='float')
+        _ = np.isfinite(n)
+        out = np.zeros_like(n)
+        out[_] = gammaincinv( 2*n[_], 0.5 ) 
+        out[~_] = np.nan
+        return out
+    else:
+        if np.isnan(n): return np.nan
+        return gammaincinv( 2*n, 0.5 ) 
     
     
 

@@ -475,7 +475,7 @@ def interpolate(sky_, rms_, shape, xmins, xmaxs, ymins, ymaxs,
 
         
         
-def skymap(data, meshsize, ps, eps=1, kappa=5,thresh=0,
+def skymap(data, meshsize, ps=1, eps=5, kappa=5, thresh=0.5,
                           medfiltsize=3, mask=None,
                           estimator_sky=np.median, estimator_rms=rms_quantile,
                           lowmem=True, tol=1.03, Niters=6, Nthreads=NTHREADS,
@@ -483,7 +483,10 @@ def skymap(data, meshsize, ps, eps=1, kappa=5,thresh=0,
     if verbose: print('skymap: measuring sky...')
     t0 = time.time()
     
-    if mask is None: mask = np.zeros_like(data, dtype='bool')
+    if mask is None: 
+        mask = np.zeros_like(data, dtype='bool')
+    else:
+        mask = mask.astype('bool').copy()
        
     meshsize = int(np.ceil(meshsize))
     

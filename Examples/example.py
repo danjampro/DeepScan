@@ -16,7 +16,11 @@ The basic outline demonstrated here is:
     
     Source masking using SExtractor with default settings (can be modified)
     
-    DBSCAN
+    DBSCAN source detection.
+    
+    1D Sersic fitting.
+    
+I will get some more specific examples of each step uploaded in the future...
 """
 
 import numpy as np

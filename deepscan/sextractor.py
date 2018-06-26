@@ -15,6 +15,17 @@ def sextract(data, mzero, ps, flux_frac=0.5, detect_thresh=1.5,
              detect_minarea=5, deblend_mincont=0.005, clean=True, convolve=True,
              kernel=None, extras='', verbose=True, bgsize=64, sexpath='sex',
              segmap=False):
+    
+    '''
+    Call SExtractor. Extra command line arguments can be specified with 'extras'.
+    
+    Parameters
+    ----------
+    
+    Returns
+    -------
+    
+    '''
             
     t0 = time.time()
     
@@ -131,7 +142,7 @@ def read_output(filename):
 
 
 def ellipses_re(df, radius_key='FLUX_RADIUS'):
-    ells = [geometry.ellipse(a=df[radius_key][i], 
+    ells = [geometry.Ellipse(a=df[radius_key][i], 
                              b=(df['B_IMAGE'][i]/df['A_IMAGE'][i])*df[radius_key][i],
                              theta=(df['THETA_IMAGE'][i])*(np.pi/180)+np.pi/2,
                              x0=df['X_IMAGE'][i],
@@ -140,13 +151,13 @@ def ellipses_re(df, radius_key='FLUX_RADIUS'):
 
 
 
-class sextractor_ellipse(geometry.ellipse):
+class sextractor_ellipse(geometry.Ellipse):
     '''Child class of ellipse that allows for extra information.'''
     def __init__(self, x0, y0, a, b, theta, flux_max=None):
-        geometry.ellipse.__init__(self,x0=x0,y0=y0,a=a,b=b,theta=theta)
+        geometry.Ellipse.__init__(self,x0=x0,y0=y0,a=a,b=b,theta=theta)
         self.flux_max = flux_max
         
-def ellipses_iso(df, uiso, ps, Nthreads=NTHREADS):
+def ellipses_iso(df, uiso, ps, Nthreads=NTHREADS, nfix=None):
     
     pool = multiprocessing.Pool(Nthreads)
     
@@ -156,8 +167,11 @@ def ellipses_iso(df, uiso, ps, Nthreads=NTHREADS):
         res = df['FLUX_RADIUS'].as_matrix() * ps
         rks = df['KRON_RADIUS'].as_matrix() * ps
         
-        ns = np.array(pool.starmap(sersic.index_re_kron,
+        if nfix is None:
+            ns = np.array(pool.starmap(sersic.index_re_kron,
                                    ((res[i], rks[i]) for i in range(res.size))))
+        else:
+            ns = np.ones_like(res) * nfix
         
         bs = np.array( pool.map(sersic.sersic_b, ns) )
         ues = sersic.effective_SB(df['MAG_AUTO'], res, ns, bs)
@@ -179,8 +193,8 @@ def ellipses_iso(df, uiso, ps, Nthreads=NTHREADS):
 
 
 
-def get_ellipses(data, mzero, ps, uiso, mask=None, fillval=0, verbose=True,
-                 Nthreads=NTHREADS, debug=True, **kwargs):
+def get_ellipses(data, uiso, ps, mzero, mask=None, fillval=0, verbose=True,
+                 Nthreads=NTHREADS, debug=False, nfix=None, **sexkwargs):
     '''
     Use SExtractor to create ellipses corresponding to isophotal radii.
     
@@ -203,12 +217,12 @@ def get_ellipses(data, mzero, ps, uiso, mask=None, fillval=0, verbose=True,
         dat = data
         
     #Run SExtractor
-    dfsex = sextract(dat, mzero=mzero, ps=ps, verbose=verbose, **kwargs)
+    dfsex = sextract(dat, mzero=mzero, ps=ps, verbose=verbose, **sexkwargs)
     
     print('get_ellipses: estimating aperture sizes...')
     
     #Calculate ellipse size
-    ellipses = ellipses_iso(dfsex, uiso, ps, Nthreads=Nthreads)
+    ellipses = ellipses_iso(dfsex, uiso, ps, nfix=nfix, Nthreads=Nthreads)
     
     #Clean result of nan values
     keepers = np.isfinite([e.a for e in ellipses])
@@ -227,6 +241,37 @@ def get_ellipses(data, mzero, ps, uiso, mask=None, fillval=0, verbose=True,
         return ellipses, dfsex2
     return ellipses
 
+
+
+def get_mask(data, uiso, ps, mzero, nfix=None, **sexkwargs):
+    '''
+    Mask sources detected by SExtractor to their derived isophotal radii.
+    
+    Parameters
+    ----------
+    
+    data: 2D data np.array
+    
+    uiso: Isophotal SB for ellipse radii
+    
+    ps: pixel scale
+    
+    mzero: magnitude zero point
+    
+    nfix: fix the Sersic index?
+    
+    sexkwargs: SExtractor keyword arguments (passed to deepscan.sextractor.sextract)
+    
+    Returns
+    -------
+    
+    mask: boolean mask np.array
+    '''
+    from deepscan.masking import fill_ellipses
+    es = get_ellipses(data, uiso, ps, mzero, nfix=nfix, **sexkwargs)
+    return fill_ellipses(data.shape, es)
+    
+    
 
 
 

@@ -51,10 +51,13 @@ class Box():
 
 class Ellipse():
     
-    def __init__(self, a=1, b=1, theta=0, x0=0, y0=0):
+    def __init__(self, a=1, b=1, theta=0, x0=0, y0=0, q=None):
         
         self.a = abs(a) 
-        self.b = abs(b)
+        if q is not None:
+            self.b = self.a * q
+        else:
+            self.b = abs(b)
         self.q = float(b)/a
         self.theta = theta
         self.x0 = x0
@@ -187,4 +190,3 @@ def unit_tophat(radius):
     return kernel
 
 
-ellipse = Ellipse

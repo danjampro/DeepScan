@@ -259,7 +259,7 @@ def dbscan(data, eps, kappa, thresh, rms, ps, verbose=True, mask=None,
     
     if mask is not None:
         if mask_type == 'rms':
-            data = masking.apply_mask(data, mask=mask, rms=rms)
+            data = masking.apply_mask(data, mask=mask, rms=rms, sky=sky)
         elif mask_type == 'zeros':
             data = masking.apply_mask(data, mask=mask, fillval=0)
         else:

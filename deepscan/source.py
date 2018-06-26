@@ -282,13 +282,13 @@ class Source():
             
             #Get inside ellipse condition
             if r == 0:
-                e2 = geometry.ellipse(x0=x0, y0=y0, a=r+dr, b=(r+dr)*q, theta=theta)
+                e2 = geometry.Ellipse(x0=x0, y0=y0, a=r+dr, b=(r+dr)*q, theta=theta)
                 inside_ = e2.check_inside(xx,yy) 
                 inside = inside_ * ~mask_crp
                     
             else:
-                e1 = geometry.ellipse(x0=x0, y0=y0, a=r, b=r*q, theta=theta)
-                e2 = geometry.ellipse(x0=x0, y0=y0, a=r+dr, b=(r+dr)*q, theta=theta)
+                e1 = geometry.Ellipse(x0=x0, y0=y0, a=r, b=r*q, theta=theta)
+                e2 = geometry.Ellipse(x0=x0, y0=y0, a=r+dr, b=(r+dr)*q, theta=theta)
             
                 inside_ = e2.check_inside(xx,yy) * ~e1.check_inside(xx,yy)
                 inside = inside_ * ~mask_crp
@@ -410,7 +410,7 @@ class Source():
         else:
             mask_crp = np.zeros_like(cutout,dtype='bool')
         if mask_radius is not None:
-            e_mask = geometry.ellipse(a=mask_radius,b=mask_radius,
+            e_mask = geometry.Ellipse(a=mask_radius,b=mask_radius,
                                       x0=e_weight.x0-xmin,
                                       y0=e_weight.y0-ymin,
                                       theta=0)
@@ -430,13 +430,13 @@ class Source():
             
             #Get inside ellipse condition
             if r == 0:
-                e2 = geometry.ellipse(x0=e_weight.x0, y0=e_weight.y0, a=r+dr, b=(r+dr)*e_weight.q, theta=e_weight.theta)
+                e2 = geometry.Ellipse(x0=e_weight.x0, y0=e_weight.y0, a=r+dr, b=(r+dr)*e_weight.q, theta=e_weight.theta)
                 inside_ = e2.check_inside(xx,yy) 
                 inside = inside_ * ~mask_crp
                     
             else:
-                e1 = geometry.ellipse(x0=e_weight.x0, y0=e_weight.y0, a=r, b=r*e_weight.q, theta=e_weight.theta)
-                e2 = geometry.ellipse(x0=e_weight.x0, y0=e_weight.y0, a=r+dr, b=(r+dr)*e_weight.q, theta=e_weight.theta)
+                e1 = geometry.Ellipse(x0=e_weight.x0, y0=e_weight.y0, a=r, b=r*e_weight.q, theta=e_weight.theta)
+                e2 = geometry.Ellipse(x0=e_weight.x0, y0=e_weight.y0, a=r+dr, b=(r+dr)*e_weight.q, theta=e_weight.theta)
             
                 inside_ = e2.check_inside(xx,yy) * ~e1.check_inside(xx,yy)
                 inside = inside_ * ~mask_crp

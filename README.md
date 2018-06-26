@@ -1,4 +1,4 @@
-Version: 0.52
+Version: 0.53
 
 DeepScan is a tool designed to detect extended low surface brightness features in astronomical data.
 

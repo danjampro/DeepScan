@@ -33,7 +33,7 @@ mzero = 30 #Magnitude zero point
 data = remote_data.get(1)  #Automatically deleted after download
 
 plt.figure()  #Show the data using DeepScan's surface brightness transform
-plt.imshow(SB.Counts2SB(abs(data), ps, mzero), cmap='binary_r', vmax=29, vmin=23)
+plt.imshow(SB.Counts2SB(abs(data), ps, mzero), cmap='binary_r', vmax=29, vmin=24)
 
 #==============================================================================
 #Measure the sky and its RMS in meshes that can be median filtered over.
@@ -88,7 +88,7 @@ e.draw(ax=plt.gca(), color='orange', linewidth=1) #Takes standard matplotlib kwa
 
 #Compare this to the actual synthetic source
 e0 = geometry.Ellipse(x0=500, y0=500, theta=3*np.pi/4, q=0.7, a=30/ps)
-e0.draw(color='r', linewidth=1, zorder=1)
+e0.draw(color='r', linewidth=1, zorder=1, linestyle='--')
 
 
 

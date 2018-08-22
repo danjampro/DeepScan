@@ -152,7 +152,7 @@ def index_re_kron(re, rk, xatol=0.1):
                     options={'xatol':xatol}).x[0]
     
     
-
+"""
 def effective_SB(mtot, re, n, b=None):
     '''
     Calculate the SB at the effective radius.
@@ -211,7 +211,6 @@ def average_effective_SB_inv(uae, n):
     f = n * np.e**b * gamma(2*n) / b**(2*n)
     return uae + 2.5*np.log10(f)
     
-    
 def magnitude(ue, re, n):
     '''
     Total magnitude.
@@ -225,11 +224,73 @@ def magnitude(ue, re, n):
     '''
     ueav = average_effective_SB(ue, n)
     return ueav - 2.5*np.log10( 2*np.pi*re**2 ) 
+"""
 
+#==============================================================================
 
-def ue2SB0(ue, n):
+def mag2meanSB(mag, re, q):
     '''
-    Convert central SB to effective SB.
+    Converts total magnitude to mean SB within Re.
+       
+    Parameters
+    ----------
+    
+    Returns
+    -------
+    
+    '''
+    return mag + 2.5*np.log10(np.pi*q*re**2) - 2.5*np.log10(0.5)
+
+
+def meanSB2mag(uae, re, n, q):
+    '''
+    Converts mean SB within Re to total magnitude.
+       
+    Parameters
+    ----------
+    
+    Returns
+    -------
+    
+    '''
+    return uae - 2.5*np.log10(np.pi*q*re**2) + 2.5*np.log10(0.5)
+
+
+def effectiveSB2mag(ue, re, n, q):
+    '''
+    Converts SB at Re to total magnitude.
+       
+    Parameters
+    ----------
+    
+    Returns
+    -------
+    
+    '''
+    b = sersic_b(n)
+    _ = 2*np.pi*re**2*np.e**b*n*b**(-2*n)*gamma(2*n)*q
+    return -2.5*np.log10(_) + ue
+
+
+def mag2effectiveSB(mag, re, n, q):
+    '''
+    Converts total magnitude to SB at Re.
+       
+    Parameters
+    ----------
+    
+    Returns
+    -------
+    
+    '''
+    b = sersic_b(n)
+    _ = 2*np.pi*re**2*np.e**b*n*b**(-2*n)*gamma(2*n)*q
+    return mag + 2.5*np.log10(_) 
+
+
+def effectiveSB2SB0(ue, n):
+    '''
+    Convert SB at Re to central SB.
     
     Parameters
     ----------
@@ -241,6 +302,22 @@ def ue2SB0(ue, n):
     b = sersic_b(n)
     return ue - 2.5*b/np.log(10)
 
+
+def meanSB2effectiveSB(uae, re, n, q):
+    '''
+    Convert mean SB within Re to SB at Re.
+    
+    Parameters
+    ----------
+    
+    Returns
+    -------
+    
+    '''
+    mag = meanSB2mag(uae, re, n, q)
+    return mag2effectiveSB(mag, re, n, q)
+
+#==============================================================================
 
 
 def fit1D(rs, Is, ue0, re0, n0, ps, mzero, dIs=None, uelow=None, uehigh=None,

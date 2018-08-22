@@ -14,8 +14,7 @@ from . import utils, geometry, sersic, NTHREADS
 def sextract(data, mzero, ps, flux_frac=0.5, detect_thresh=1.5, 
              detect_minarea=5, deblend_mincont=0.005, clean=True, convolve=True,
              kernel=None, extras='', verbose=True, bgsize=64, sexpath='sex',
-             segmap=False):
-    
+             checkplots=['SEGMENTATION', 'BACKGROUND', 'BACKGROUND_RMS']):    
     '''
     Call SExtractor. Extra command line arguments can be specified with 'extras'.
     
@@ -26,12 +25,21 @@ def sextract(data, mzero, ps, flux_frac=0.5, detect_thresh=1.5,
     -------
     
     '''
-            
+    
+    if isinstance(checkplots, str):
+        checkplots = [checkplots]
+    elif hasattr(checkplots, '__len__'):
+        assert(all([isinstance(_, str) for _ in checkplots]))
+    else:
+        assert(checkplots is None)
+        checkplots = []
+    
+                
     t0 = time.time()
     
     #Create a temporary directory
     with tempfile.TemporaryDirectory() as dirpath:
-        
+                
         #Save the data as fits
         fitsdata = os.path.join(dirpath, 'data.fits')
         utils.save_to_fits(data, fitsdata)
@@ -44,16 +52,34 @@ def sextract(data, mzero, ps, flux_frac=0.5, detect_thresh=1.5,
         #Make the parameter file
         param_name = os.path.join(dirpath, 'default.param')
         with open(param_name, 'w') as param:
-            param.write('X_IMAGE\nY_IMAGE\nMAG_AUTO\nFLUX_RADIUS\nA_IMAGE\n\
+            param.write('NUMBER\nX_IMAGE\nY_IMAGE\nMAG_AUTO\nFLUX_RADIUS\nA_IMAGE\n\
                         B_IMAGE\nTHETA_IMAGE\nMAG_ISO\nKRON_RADIUS\nFLUX_MAX\n\
                         ISOAREA_IMAGE\nXMAX_IMAGE\nXMIN_IMAGE\nYMAX_IMAGE\n\
-                        YMIN_IMAGE\n')
+                        YMIN_IMAGE\nMAG_ISOCOR\nMAG_PETRO')
             
+        #Create file names for the checkplots
+        fnames_chk = [os.path.join(dirpath, '%s.fits' % _) for _ in checkplots]
+        
+        #Create checkplot string for SExtractor input
+        if len(checkplots) == 0:
+            checkstr = ''
+        else:
+            checkstr = ' -CHECKIMAGE_NAME ' + '"' + ' '.join(fnames_chk) + '"'
+            checkstr += ' -CHECKIMAGE_TYPE '
+            checkstr = checkstr + '"' + ' '.join(checkplots) + '"'
+            
+            
+            
+        extras = '%s%s' % (extras, checkstr)
+        
+            
+        '''
         #Decide whether to save segimage
         if segmap:
             segname = os.path.join(dirpath, 'seg1.fits')
             extras = '%s -CHECKIMAGE_NAME %s -CHECKIMAGE_TYPE SEGMENTATION' % (extras, segname)
-            
+        '''
+        
         #Convert the bools to Y or Ns
         if clean:
             clean = 'Y'
@@ -89,15 +115,24 @@ def sextract(data, mzero, ps, flux_frac=0.5, detect_thresh=1.5,
         t1 = time.time() - t0
         if verbose:
             print('-sextractor: finished after %i seconds.' % t1)
+            
         
+        output = {}
+        
+        #Read checkplots
+        for cp, fcp in zip(checkplots, fnames_chk):
+            output[cp] = utils.read_fits(fcp)
+                
+        '''
         #Return dataframe + segmap
         if segmap:
             segmap = utils.read_fits(segname)
             os.remove(segname)
             return read_output(ofile), segmap
+        '''
         
         #Read the parameters into a pandas dataframe
-        return read_output(ofile)
+        return read_output(ofile), output
         
 
 def write_filter(arr, fname, norm=False):
@@ -163,9 +198,9 @@ def ellipses_iso(df, uiso, ps, Nthreads=NTHREADS, nfix=None):
     
     try:
     
-        thetas = df['THETA_IMAGE'].as_matrix()*(np.pi/180)+np.pi/2
-        res = df['FLUX_RADIUS'].as_matrix() * ps
-        rks = df['KRON_RADIUS'].as_matrix() * ps
+        thetas = df['THETA_IMAGE'].values*(np.pi/180)+np.pi/2
+        res = df['FLUX_RADIUS'].values * ps
+        rks = df['KRON_RADIUS'].values * ps
         
         if nfix is None:
             ns = np.array(pool.starmap(sersic.index_re_kron,
@@ -217,7 +252,7 @@ def get_ellipses(data, uiso, ps, mzero, mask=None, fillval=0, verbose=True,
         dat = data
         
     #Run SExtractor
-    dfsex = sextract(dat, mzero=mzero, ps=ps, verbose=verbose, **sexkwargs)
+    dfsex, _ = sextract(dat, mzero=mzero, ps=ps, verbose=verbose, **sexkwargs)
     
     print('get_ellipses: estimating aperture sizes...')
     

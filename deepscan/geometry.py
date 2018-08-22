@@ -56,9 +56,10 @@ class Ellipse():
         self.a = abs(a) 
         if q is not None:
             self.b = self.a * q
+            self.q = q
         else:
             self.b = abs(b)
-        self.q = float(b)/a
+            self.q = float(b)/a
         self.theta = theta
         self.x0 = x0
         self.y0 = y0
@@ -99,7 +100,7 @@ class Ellipse():
         
         
     def rescale(self, factor):
-        return Ellipse(a=factor*self.a, b=factor*self.b, theta=self.theta, x0=self.x0, y0=self.y0)
+        return Ellipse(a=factor*self.a, q=self.q, theta=self.theta, x0=self.x0, y0=self.y0)
     
     
     

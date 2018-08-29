@@ -11,7 +11,7 @@ from scipy.ndimage.measurements import label, find_objects
 from astropy.convolution import convolve_fft
 from astropy.convolution import Gaussian2DKernel
 from astropy.nddata import Cutout2D
-from . import geometry, SB, masking, utils
+from . import geometry, SB, masking, utils, sersic
 
 
 class Source():
@@ -328,14 +328,11 @@ class Source():
         
 
                            
-    
     def fit_1Dsersic(self, data, segmap, ps, mzero, dr=1, Rmax=250, mask=None,
                      minpts=5, makeplots=False, ue0=None, re0=None, n0=None,
                      tol=1.05, smooth_size=None, verbose=False, mask_radius=None,
                      skybox=None, sky=None, pix_corr=1, Nreps=1, **kwargs):
-        
-        from . import sersic
-        
+                
         default_return = {'x0':self.xcen,
                         'y0':self.ycen,
                         'q':np.nan,
@@ -479,9 +476,10 @@ class Source():
         if n0 is None:
             n0 = 1
         if ue0 is None:
-            ue0 = sersic.average_effective_SB_inv(self.flux(data=data,
-                                segmap=segmap,mask=mask,sky=sky )/self.area(
-                                                segmap=segmap,mask=mask),  n0)
+            ue0 = sersic.meanSB2effectiveSB(SB.Counts2SB(self.flux(data=data,
+                  segmap=segmap,mask=mask,sky=sky)/self.area(segmap=segmap,
+                                                 mask=mask),ps,mzero),  re0,
+                                                    n0, e_weight.q)
             
         #Rescale the intensity values - fit can fail otherwise
         Is = np.array(Is)
@@ -513,129 +511,13 @@ class Source():
                 'ue':popt[0],
                 're':popt[1],
                 'n':popt[2],
-                'mag':sersic.magnitude(popt[0], popt[1], popt[2]),
+                'mag':sersic.effectiveSB2mag(popt[0],popt[1],popt[2],e_weight.q),
                 'due':perr[0],
                 'dre':perr[1],
                 'dn':perr[2],
                 'dmag':None
                 }
-        '''   
-        except Exception as e:
-            print(e)
-            if makeplots:
-                import matplotlib.pyplot as plt
-                plt.figure()
-                plt.errorbar(rs, Is/A, yerr=dIs, color='k')
-                plt.ylim(-0.2,1.2)
-                plt.title('Fit failed.')
-            return default_return
-        '''
-         
-        """                   
-        #Do some data pertubations within error to get more robust result
-        if Nreps > 1:
-            
-            from astropy.stats import sigma_clip
-            if makeplots:
-                import matplotlib.pyplot as plt
-                plt.figure()
-                plt.errorbar(rs, Is, yerr=dIs, color='k')
-                plt.ylim(-0.2,1.2)
-            
-            popts = []
-            X2s = []
-            for n in range(Nreps):                
-                try:
-                    popt, pcov = curve_fit(sersic.profile, xdata=rs, ydata=Is,
-                                           p0=p0, bounds=(np.ones(3)*1E-8,
-                                                          np.ones(3)*np.inf))#,
-                                                          #sigma=dIs)
-                    
-                    if np.isfinite(popt).all():
-                        popts.append(popt)
-                        
-                        #Calculate chi-squared
-                        X2s.append(np.sum((sersic.profile(rs,*popt)-Is)/dIs)**2)
-                    
-                        if makeplots:
-                            rs2 = np.linspace(0, np.max(rs), 100)
-                            Is2 = sersic.profile(rs2, popt[0], popt[1], popt[2])
-                            plt.plot(rs2, Is2, color='grey',alpha=0.3)
-                                                        
-                except Exception as e:
-                    pass          
-            if len(popts) == 0:    
-                return default_return
-        
-            else:
 
-                popt = popts[np.argmin(X2s)]                
-                popts = np.vstack([popts])
-                                
-                #Apply the sigma clip
-                sigcs= [sigma_clip(popts[:,i]) for i in range(popts.shape[1])]
-                #popt = [np.median(sigcs[i]) for i in range(popts.shape[1])]
-                perr = [np.std(sigcs[i]) for i in range(popts.shape[1])]
-                
-                if makeplots:
-                    rs2 = np.linspace(0, np.max(rs))
-                    plt.plot(rs2, sersic.profile(rs2, popt[0], popt[1], popt[2]), color='r')
-                    
-                #Return dictionary with result
-                mag = sersic.magnitude(SB.Counts2SB(popt[0],ps,mzero), popt[1]*ps, popt[2])
-                
-                return {'x0':e_weight.x0,
-                        'y0':e_weight.y0,
-                        'q':e_weight.q,
-                        'theta':e_weight.theta,
-                        'ue':SB.Counts2SB(popt[0],ps,mzero),
-                        're':popt[1]*ps,
-                        'n':popt[2],
-                        'mag':mag,
-                        'due':SB.Counts2SB(popt[0]-perr[0],ps,mzero)-SB.Counts2SB(popt[0],ps,mzero),
-                        'dre':perr[1]*ps,
-                        'dn':perr[2],
-                        'dmag':None
-                        }
-                        
-        #If no repeats are necessary, do a single fit...
-        else:
-            if makeplots:
-                import matplotlib.pyplot as plt
-                plt.figure()
-                plt.errorbar(rs, Is, yerr=dIs, color='k')
-            try:
-                popt, pcov = curve_fit(sersic.profile, xdata=rs, ydata=Is, sigma=dIs,
-                                       p0=p0)
-                perr = np.sqrt(np.diag(pcov))
-                
-                if makeplots:
-                    rs2 = np.linspace(0, np.max(rs))
-                    plt.plot(rs2, sersic.profile(rs2, popt[0], popt[1], popt[2]), color='r')
-                    plt.ylim(-0.2,1.2)
-                
-                #Return dictionary with result
-                mag = sersic.magnitude(SB.Counts2SB(popt[0],ps,mzero), popt[1]*ps, popt[2])
-                
-                return {'x0':e_weight.x0,
-                        'y0':e_weight.y0,
-                        'q':e_weight.q,
-                        'theta':e_weight.theta,
-                        'ue':SB.Counts2SB(popt[0],ps,mzero),
-                        're':popt[1]*ps,
-                        'n':popt[2],
-                        'mag':mag,
-                        'due':SB.Counts2SB(popt[0]-perr[0],ps,mzero)-SB.Counts2SB(popt[0],ps,mzero),
-                        'dre':perr[1]*ps,
-                        'dn':perr[2],
-                        'dmag':None
-                        }
-            
-            except Exception as e:
-                if verbose:
-                    print(e)
-                return default_return
-    """
         
 
     def display(self, data, ax=None, mapping=np.arcsinh, mask=None, size=None,

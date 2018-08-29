@@ -68,17 +68,7 @@ def sextract(data, mzero, ps, flux_frac=0.5, detect_thresh=1.5,
             checkstr += ' -CHECKIMAGE_TYPE '
             checkstr = checkstr + '"' + ' '.join(checkplots) + '"'
             
-            
-            
         extras = '%s%s' % (extras, checkstr)
-        
-            
-        '''
-        #Decide whether to save segimage
-        if segmap:
-            segname = os.path.join(dirpath, 'seg1.fits')
-            extras = '%s -CHECKIMAGE_NAME %s -CHECKIMAGE_TYPE SEGMENTATION' % (extras, segname)
-        '''
         
         #Convert the bools to Y or Ns
         if clean:
@@ -122,15 +112,7 @@ def sextract(data, mzero, ps, flux_frac=0.5, detect_thresh=1.5,
         #Read checkplots
         for cp, fcp in zip(checkplots, fnames_chk):
             output[cp] = utils.read_fits(fcp)
-                
-        '''
-        #Return dataframe + segmap
-        if segmap:
-            segmap = utils.read_fits(segname)
-            os.remove(segname)
-            return read_output(ofile), segmap
-        '''
-        
+                        
         #Read the parameters into a pandas dataframe
         return read_output(ofile), output
         
@@ -209,8 +191,8 @@ def ellipses_iso(df, uiso, ps, Nthreads=NTHREADS, nfix=None):
             ns = np.ones_like(res) * nfix
         
         bs = np.array( pool.map(sersic.sersic_b, ns) )
-        ues = sersic.effective_SB(df['MAG_AUTO'], res, ns, bs)
         qs = df['B_IMAGE']/df['A_IMAGE']
+        ues = sersic.mag2effectiveSB(df['MAG_AUTO'].values, res, ns, qs)
         risos = sersic.isophotal_radius(uiso, ues, res, ns, bs)
         
         ells = [sextractor_ellipse(a=risos[i] / ps, 

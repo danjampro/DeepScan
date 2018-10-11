@@ -107,7 +107,7 @@ def _index_re_kron(n, re, rk):
     n : float
         Sersic index.
     re : float
-        Effective radius.
+        Effective (half-light) radius.
     rk : float
         Kron radius integrated to 2.5*re.
         
@@ -138,7 +138,7 @@ def index_re_kron(re, rk, xatol=0.1):
     Parameters
     ----------
     re : float
-        Effective radius.
+        Effective (half-light) radius.
     rk : float
         Kron radius integrated to 2.5*re.
         
@@ -159,24 +159,38 @@ def mag2meanSB(mag, re, q):
        
     Parameters
     ----------
+    mag : 
+        Total magnitude [mag].   
+    re : 
+        Effective (half light) radius [arcsec].       
+    q : 
+        Axis ratio (b/a).
     
     Returns
     -------
-    
+    float 
+        Average surface brightness within th effective radius [mag arcsec-2].
     '''
     return mag + 2.5*np.log10(np.pi*q*re**2) - 2.5*np.log10(0.5)
 
 
-def meanSB2mag(uae, re, n, q):
+def meanSB2mag(uae, re, q):
     '''
     Converts mean SB within Re to total magnitude.
        
     Parameters
     ----------
+    uae : 
+        Average surface brightness within the effective radius [mag arcsec-2].    
+    re : 
+        Effective (half light) radius [arcsec].        
+    q : 
+        Axis ratio (b/a).
     
     Returns
     -------
-    
+    float 
+        Total magnitude.
     '''
     return uae - 2.5*np.log10(np.pi*q*re**2) + 2.5*np.log10(0.5)
 
@@ -187,9 +201,19 @@ def effectiveSB2mag(ue, re, n, q):
        
     Parameters
     ----------
+    ue : 
+        Surface brightness at the effective radius [mag arcsec-2].    
+    re :
+        Effective (half light) radius [arcsec].   
+    n : 
+        Profile index.   
+    q : 
+        Axis ratio (b/a)
     
     Returns
     -------
+    float 
+        Total magnitude.
     
     '''
     b = sersic_b(n)
@@ -203,10 +227,19 @@ def mag2effectiveSB(mag, re, n, q):
        
     Parameters
     ----------
+    mag :
+        Total magnitude [mag].
+    re : 
+        Effective (half light) radius [arcsec].
+    n : 
+        Profile index.   
+    q :
+        Axis ratio (b/a)
     
     Returns
     -------
-    
+    float
+        Surface brightness at the effective radius [mag arcsec-2].    
     '''
     b = sersic_b(n)
     _ = 2*np.pi*re**2*np.e**b*n*b**(-2*n)*gamma(2*n)*q
@@ -219,9 +252,15 @@ def effectiveSB2SB0(ue, n):
     
     Parameters
     ----------
-    
+    ue : 
+        Surface brightness at the effective radius [mag area-1].     
+    n : 
+        Profile index.   
+
     Returns
     -------
+    float
+        Central surface brightness [mag area-1].
     
     '''
     b = sersic_b(n)
@@ -234,111 +273,60 @@ def meanSB2effectiveSB(uae, re, n, q):
     
     Parameters
     ----------
+    uae : 
+        Average surface brightness within the effective radius [mag area-1].    
+    re : 
+        Effective (half light) radius.  
+    n : 
+        Profile index.  
+    q : 
+        Axis ratio (b/a).
     
     Returns
     -------
-    
+    float:
+        Surface brightness at the effective radius [mag area-1].    
     '''
-    mag = meanSB2mag(uae, re, n, q)
+    mag = meanSB2mag(uae, re, q)
     return mag2effectiveSB(mag, re, n, q)
 
 #==============================================================================
 
-
-def fit1D(rs, Is, ue0, re0, n0, ps, mzero, dIs=None, uelow=None, uehigh=None,
-          relow=0, rehigh=np.inf, nlow=0.2, nhigh=8, nobounds=False, log=True,
-          **kwargs):
+def h2Re(h, n):
     '''
-    Perform 1D fit of Sersic profile.
+    Convert exponential scale length to effective radius.
     
-    Paramters
-    ---------
+    Parameters
+    ----------
+    h :
+        Exponential scale size.
+    n : 
+        Profile index.  
     
     Returns
     -------
-    
+    float
+        Effective (half-light) radius.
     '''
-    from scipy.optimize import curve_fit
-    
-    rs = np.array(rs)
-    Is = np.array(Is)
-    dIs = np.array(Is)
-    
-    if dIs is not None:
-        dIs = abs(dIs)
-    
-    if log:
-        #Boundary imposition
-        if nobounds:
-            bounds=None
-        else:
-            if uelow is None:
-                uelow = 99
-            if uehigh is None:
-                uehigh = -99
-            if relow is None:
-                relow = 0
-            if rehigh is None:
-                rehigh = np.inf
-            if nlow is None:
-                nlow = 0
-            if nhigh is None:
-                nhigh = np.inf
-            bounds = [uehigh, relow, nlow], [uelow, rehigh, nhigh]
-            
-            #Unit conversions
-            sbs = SB.Counts2SB(Is, ps, mzero)
-            cond = np.isfinite(sbs) 
-            sbs = sbs[cond]
-            rs = rs[cond]
-            if dIs is not None:
-                dsbs= sbs - SB.Counts2SB(Is+dIs, ps, mzero)[cond]
-                dsbs = np.isfinite(dsbs)  
-            else:
-                dsbs = None
-                                
-            #Profile fitting
-            popt, pcov = curve_fit(profile_SB,xdata=rs,ydata=sbs,sigma=dsbs,
-                                   p0=[ue0,re0,n0], bounds=bounds, **kwargs)
-            perr = np.sqrt(np.diag(pcov))
-    else:
-        Ie0 = SB.SB2Counts(ue0, ps, mzero)
-        
-        #Boundary imposition
-        if nobounds:
-            bounds=None
-        else:
-            if uelow is None:
-                Ielow = 0
-            else:
-                Ielow = SB.SB2Counts(uelow, ps, mzero)
-            if uehigh is None:
-                Iehigh = np.inf
-            else:
-                Iehigh = SB.SB2Counts(uehigh, ps, mzero)
-            if relow is None:
-                relow = 0
-            if rehigh is None:
-                rehigh = np.inf
-            if nlow is None:
-                nlow = 0
-            if nhigh is None:
-                nhigh = np.inf   
-            #bounds = [(Ielow,Iehigh), (relow,rehigh), (nlow,nhigh)]
-            bounds = [Ielow, relow, nlow], [Iehigh, rehigh, nhigh]
-    
-            #Profile fitting
-            popt, pcov = curve_fit(profile,xdata=rs,ydata=Is,sigma=dIs,
-                                   p0=[Ie0,re0,n0], bounds=bounds, **kwargs)      
-            perr = np.sqrt(np.diag(pcov))
-            
-            #Unit conversions
-            ueopt = SB.Counts2SB(popt[0], ps, mzero)
-            perr = [ueopt - SB.Counts2SB(popt[0]+perr[0], ps, mzero), perr[1],
-                    perr[2]]
-            popt = [ueopt, popt[1], popt[2]]
-               
-    return popt, perr
+    return h*sersic_b(n)**n
 
+def Re2h(re, n):
+    '''
+    Convert effective radius to exponential scale length .
+    
+    Parameters
+    ----------
+    h :
+        Effective (half-light) radius.
+    n : 
+        Profile index.  
+    
+    Returns
+    -------
+    float
+        Exponential scale length.       
+    '''
+    return re/sersic_b(n)**n
 
+#==============================================================================
 

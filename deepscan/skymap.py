@@ -322,7 +322,7 @@ def skymap(data, meshsize, medfiltsize=3, mask=None, method='cubic',
     #Make the mesh array (required for median filtering)
     msky = np.zeros((Ny,Nx), dtype=data.dtype)
     mrms = np.zeros((Ny,Nx), dtype=data.dtype)
-    
+        
     #Do the incremental DBSCAN masking iterations
     count=0; finished=False
     while not finished:
@@ -334,7 +334,7 @@ def skymap(data, meshsize, medfiltsize=3, mask=None, method='cubic',
             #Calculate the mesh values
             msky[mesh.j,mesh.i], mrms[mesh.j,mesh.i] = mesh.measure(data,
                                   mask=mask, skyfunc=skyfunc, rmsfunc=rmsfunc)
-            
+                        
             #Check if the sky has converged
             if msky[mesh.j,mesh.i]/mesh.sky <= tol:
                 mesh.deactivate()
@@ -345,7 +345,7 @@ def skymap(data, meshsize, medfiltsize=3, mask=None, method='cubic',
                 
             #Update the mesh values
             mesh.update(msky[mesh.j,mesh.i], mrms[mesh.j,mesh.i])
-                     
+            
         if not finished: #There are changes
                                    
             #Apply the median filter
@@ -360,7 +360,7 @@ def skymap(data, meshsize, medfiltsize=3, mask=None, method='cubic',
             cond_finite = np.isfinite(mrms)
             if cond_finite.any():
                 mrms = fill_nans(mrms)
-                                            
+                                                            
             #Interpolate the meshgrid to the full size (ignoring nans)
             sky = interpolate_meshgrid(msky,data.shape,lowmem=lowmem,method=method)
             rms = interpolate_meshgrid(mrms,data.shape,lowmem=lowmem,method=method)

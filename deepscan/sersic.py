@@ -5,12 +5,11 @@ Created on Sat Nov 18 20:11:40 2017
 
 @author: danjampro
 """
-
 import numpy as np
 from scipy.special import gamma, gammainc, gammaincinv
 from scipy.optimize import minimize
-from . import SB
 
+#==============================================================================
 
 def profile(r, Ie, re, n):
     '''
@@ -67,7 +66,6 @@ def sersic_b(n):
         return gammaincinv( 2*n, 0.5 ) 
     
     
-
 def isophotal_radius(uiso, ue, re, n, b=None):
     
     '''Calculate the isophotal radius.

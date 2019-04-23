@@ -18,12 +18,13 @@ The basic outline demonstrated here is:
     
     DBSCAN source detection.
         
-I will get some more specific examples of each step uploaded in the future...
+See the de-blending example for an approach that does not use a mask.
 """
-
 import numpy as np
 import matplotlib.pyplot as plt
 from deepscan import skymap, sextractor, dbscan, SB, geometry, remote_data
+
+#==============================================================================
 
 ps = 0.186 #Pixel scale [arcsec per pixel]
 mzero = 30 #Magnitude zero point
@@ -31,7 +32,8 @@ mzero = 30 #Magnitude zero point
 data = remote_data.get(1)  #Automatically deleted after download
 
 plt.figure()  #Show the data using DeepScan's surface brightness transform
-plt.imshow(SB.Counts2SB(abs(data), ps, mzero), cmap='binary_r', vmax=29, vmin=24)
+plt.imshow(SB.Counts2SB(abs(data), ps, mzero), cmap='binary_r', vmax=29,
+           vmin=24)
 
 #==============================================================================
 #Measure the sky and its RMS in meshes that can be median filtered over.
@@ -47,7 +49,8 @@ sky, rms = skymap.skymap(data, meshsize=200, medfiltsize=3, nits=3,
 #The Sersic index can be fixed with the "nfix" keyword. Higher values result
 #in larger masks. nfix=4 is quite good. 
 
-#The SExtractor settings can be specified here also. See deepscan.sextractor.sextract.
+#The SExtractor settings can be specified here also. 
+#See deepscan.sextractor.sextract.
 #I will add some specific examples in the future.
 
 mask = sextractor.get_mask(data, uiso=29, ps=ps, mzero=mzero, nfix=None)
@@ -58,17 +61,17 @@ plt.contour(mask!=0, colors='b', linewidths=0.3) #Mask contour
 #Run the DBSCAN algorithm to produce a Clustered object (C). This class has
 #many attributes such as the segmentation maps. 
 
-#'eps' is the clustering radius in units specified by PS. i.e. if ps=1 then eps
-#is in pixels. 'kappa' is the confidence parameter determined from the pixel 
-#threshold 'thresh' and the rms. 
+#'eps' is the clustering radius in pixels. kappa is the confidence parameter
+#determined from the thresh and the rms. 
 
 #The automatic minpts derivation using kappa, rms and thresh can be overridden
 #by specifying the mpts keyword argument.
 
-C = dbscan.dbscan(data, eps=5, kappa=30, thresh=1, ps=ps,
-                  verbose=True, mask=mask, sky=sky, rms=rms, mpts=None)
-
-plt.contour(C.segmap_dilate!=0, colors='lawngreen', linewidths=0.5) #segmap contour
+C = dbscan.DBSCAN(data, eps=5/ps, kappa=30, thresh=1, verbose=True,
+                  mask=mask, sky=sky, rms=rms, mpts=None)
+#segmap contour
+plt.contour(C.segmap!=0, colors='lawngreen', linewidths=0.5) 
+plt.contour(C.segmap_dilate!=0, colors='deepskyblue', linewidths=0.5) 
 
 #==============================================================================
 

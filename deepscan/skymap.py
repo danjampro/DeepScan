@@ -6,7 +6,6 @@ Created on Mon Nov  7 10:57:08 2016
 
 Generation of noise map by finite differences
 """
-
 import os, tempfile, time
 import numpy as np
 from scipy.interpolate import griddata, CloughTocher2DInterpolator
@@ -17,9 +16,9 @@ from . import BUFFSIZE, dbscan
 
 #==============================================================================
 
-interpolators = {'cubic':CloughTocher2DInterpolator,
-                 'linear':LinearNDInterpolator,
-                 'nearest':NearestNDInterpolator}
+interpolators = {'cubic'  : CloughTocher2DInterpolator,
+                 'linear' : LinearNDInterpolator,
+                 'nearest': NearestNDInterpolator}
 
 #==============================================================================
 
@@ -29,13 +28,16 @@ def estimator_quantile(data):
     
     Paramters
     ---------
-    data: 1D numpy array.
+    data : 1D array
+        Input data.
     
     Returns
     -------
-    median (float): median sky estimate.
+    float
+        median sky estimate.
     
-    quantile (float): lower quantile RMS estimate.    
+    float 
+        lower quantile RMS estimate.    
     '''
     #Increasing order
     data = np.sort(data.reshape(data.size))
@@ -50,9 +52,12 @@ def estimator_quantile(data):
     return median, quantile
 
 #==============================================================================
-
-class Mesh():
+#Mesh class
     
+class Mesh():
+    '''
+    
+    '''
     def __init__(self, i, j, xmin, xmax, ymin, ymax, active=True, sky=None,
                  rms=None, fillfrac=0):
         
@@ -110,7 +115,9 @@ class Mesh():
 #==============================================================================
 
 def make_meshes(shape, meshsize, **kwargs):
+    '''
     
+    '''
     meshsize = int(np.ceil(meshsize))
     
     #Get mesh boundaries in pixel coordinates
@@ -131,7 +138,9 @@ def make_meshes(shape, meshsize, **kwargs):
 #==============================================================================
 
 def fill_nans(data):
-
+    '''
+    
+    '''
     #Identify points requiring interpolation    
     isnan = ~np.isfinite(data)
     if not isnan.any():
@@ -155,7 +164,9 @@ def fill_nans(data):
 #==============================================================================
 
 def interpolate_meshgrid(data, shape, lowmem=False, method='cubic'):
-        
+    '''
+    
+    ''' 
     #Get coordinates for interpolation
     yy, xx = np.where(np.isfinite(data))    
     size0 = xx.size #Used later
@@ -266,8 +277,8 @@ def interp_lowmem(points, values, shape_old, shape_new, fillwidth=None,
 #==============================================================================
         
 def skymap(data, meshsize, medfiltsize=3, mask=None, method='cubic',
-           skyfunc='median', rmsfunc='quantile', lowmem=False, tol=1.03, nits=6,
-           getmask=False, fillfrac=0.3, ps=1, eps=5, kappa=5, thresh=0.5,
+           skyfunc='median', rmsfunc='quantile', lowmem=False, tol=1.03,
+           nits=6, getmask=False, fillfrac=0.3, eps=5, kappa=5, thresh=0.5,
            verbose=False):
     '''
     Measure the sky and sky RMS in meshes, iteritively masking sources using
@@ -275,37 +286,50 @@ def skymap(data, meshsize, medfiltsize=3, mask=None, method='cubic',
     
     Parameters
     ----------
-    data: 2D numpy array.
+    data: 2D float array
+        The data array.
     
-    meshsize (int): Background mesh unit size [pixels].
+    meshsize : int
+        Background mesh unit size [pixels].
     
-    medfiltsize (int): Median filter size [meshes].
+    medfiltsize : int
+        Median filter size [meshes].
     
-    method (str): Interpolation type. Either 'cubic', 'linear' or 'nearest'.
+    method : str
+        Interpolation type. Either 'cubic', 'linear' or 'nearest'.
     
-    skyfunc (function or str): Function for sky estimation.
+    skyfunc : function or str 
+        Function for sky estimation.
     
-    rmsfunc (function or str): Function for sky RMS estimation.
+    rmsfunc : function or str
+        Function for sky RMS estimation.
          
-    mask: 2D numpy array. Initial mask that grows in the function.
+    mask : 2D boolean array
+        Optional initial mask that can expand.
     
-    lowmem (bool): Low memory mode?
+    lowmem : bool
+        Low memory mode?
     
-    tol (float): Convergence tolerance for meshes.
+    tol : float
+        Convergence tolerance for background estimate.
     
-    nits (int): Maximum number of masking iterations.
+    nits : int
+        Maximum number of masking iterations.
     
-    getmask (bool): Return the mask?
+    getmask : bool
+        Return the mask?
     
-    fillfrac (float): Minimum unmasked fraction in mesh before interpolation.
+    fillfrac : float
+        Minimum unmasked fraction in mesh before it is interpolated over.
     
     Returns
     -------
-    sky (2D numpy array): Interpolated sky map.
+    2D float array
+        Interpolated sky image.
     
-    rms (2D numpy array): Interpolated sky RMS map.
-    '''
-    
+    2D float array
+        Interpolated sky RMS image.
+    '''  
     if verbose: 
         print('skymap: measuring sky...')
         t0 = time.time()
@@ -362,18 +386,23 @@ def skymap(data, meshsize, medfiltsize=3, mask=None, method='cubic',
                 mrms = fill_nans(mrms)
                                                             
             #Interpolate the meshgrid to the full size (ignoring nans)
-            sky = interpolate_meshgrid(msky,data.shape,lowmem=lowmem,method=method)
-            rms = interpolate_meshgrid(mrms,data.shape,lowmem=lowmem,method=method)
+            sky = interpolate_meshgrid(msky, data.shape, lowmem=lowmem,
+                                       method=method)
+            rms = interpolate_meshgrid(mrms, data.shape, lowmem=lowmem,
+                                       method=method)
                         
             #Use DBSCAN to update the mask
             if nits != 0:
-                mask |= dbscan.dbscan(data, mask=None, sky=sky, eps=eps,
-                                      kappa=kappa, thresh=thresh, ps=ps,
-                                      rms=rms, verbose=False,
+                mask |= dbscan.DBSCAN(data, mask=None, sky=sky, eps=eps,
+                                      kappa=kappa, thresh=thresh, rms=rms,
+                                      verbose=False
                                       ).segmap_dilate.astype('bool')
+        
         #Check if max iterations have been reached     
         if count >= nits:
-            if verbose: print('-WARNING: skymap reached max iterations.')
+            if (verbose&(any([m.active for m in meshes]))):
+                print('-WARNING: skymap reached max iterations without full\
+                      convergence.')
             finished = True
         if (nits!=0): count += 1
             
@@ -381,10 +410,13 @@ def skymap(data, meshsize, medfiltsize=3, mask=None, method='cubic',
     if verbose: 
         meshes_converged = np.sum([(not m.active) for m in meshes])
         print('-Total iterations: %i.'%(count))
-        print('-Final mesh convergence: %i%%.'%(100*meshes_converged/len(meshes)))
+        print('-Final mesh convergence: %i%%.'% (
+                                        100*meshes_converged/len(meshes)))
         print('skymap: finished after %i seconds.' % (time.time()-t0))
+    
     if getmask:   
         return sky, rms, mask
+    
     return sky, rms
             
     

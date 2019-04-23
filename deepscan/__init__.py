@@ -15,5 +15,5 @@ NTHREADS = 1#multiprocessing.cpu_count()
 BUFFSIZE = io.DEFAULT_BUFFER_SIZE  #Default buffer size in bytes
 
 #Import the modules
-#from . import SB, geometry, dbscan, skymap, utils, minpts, masking, convolution
+#from . import SB, geometry, dbscan, skymap, utils, minpts, masking, convolution, deblend
 

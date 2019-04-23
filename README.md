@@ -1,13 +1,20 @@
-Version: 0.53
+## DeepScan v0.6 
 
-DeepScan is a tool designed to detect extended low surface brightness features in astronomical data.
+![A picture](https://raw.githubusercontent.com/danjampro/DeepScan/master/examples/example_deblending.png)
 
-Installation:
+DeepScan is a tool designed to detect low surface brightness features in astronomical data without fragmenting extended structure. The software was originally introduced in [Prole et al. (2019)](https://doi.org/10.1093/mnras/sty1021).
 
-pip install deepscan
+DeepScan has gone through significant changes since its first release. The most recent development has been the introduction of a de-blending algorithm designed to overcome limitations encountered by other software.
 
-Contact:
+Please see the examples to see how to use DeepScan. 
 
-Dan Prole (proled@cardiff.ac.uk)
+The software is still very much in development and any questions or feedback would be welcomed.
 
-Notes: I intent to upload some examples in the future. If you are interested in the code before then, please contact me. Also If you have suggestions then let me know.
+**Installation:**
+
+	$pip install deepscan
+
+**Contact:**
+
+Dan Prole (<proled@cardiff.ac.uk>)
+

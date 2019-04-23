@@ -4,19 +4,23 @@
 Created on Tue Sep 19 10:57:41 2017
 
 @author: danjampro
-"""
 
+Something of a work in progress...
+"""
 import os, subprocess, tempfile, time, multiprocessing
 import numpy as np
 import pandas as pd
 from . import utils, geometry, sersic, NTHREADS
 
+#==============================================================================
+
 def sextract(data, mzero, ps, flux_frac=0.5, detect_thresh=1.5, 
-             detect_minarea=5, deblend_mincont=0.005, clean=True, convolve=True,
+             detect_minarea=5, deblend_mincont=0.005, clean=True,convolve=True,
              kernel=None, extras='', verbose=True, bgsize=64, sexpath='sex',
              checkplots=['SEGMENTATION', 'BACKGROUND', 'BACKGROUND_RMS']):    
     '''
-    Call SExtractor. Extra command line arguments can be specified with 'extras'.
+    Call SExtractor. Extra command line arguments can be specified with
+    'extras'.
     
     Parameters
     ----------
@@ -52,7 +56,8 @@ def sextract(data, mzero, ps, flux_frac=0.5, detect_thresh=1.5,
         #Make the parameter file
         param_name = os.path.join(dirpath, 'default.param')
         with open(param_name, 'w') as param:
-            param.write('NUMBER\nX_IMAGE\nY_IMAGE\nMAG_AUTO\nFLUX_RADIUS\nA_IMAGE\n\
+            param.write('NUMBER\nX_IMAGE\nY_IMAGE\nMAG_AUTO\nFLUX_RADIUS\
+                        \nA_IMAGE\n\
                         B_IMAGE\nTHETA_IMAGE\nMAG_ISO\nKRON_RADIUS\nFLUX_MAX\n\
                         ISOAREA_IMAGE\nXMAX_IMAGE\nXMIN_IMAGE\nYMAX_IMAGE\n\
                         YMIN_IMAGE\nMAG_ISOCOR\nMAG_PETRO')
@@ -91,7 +96,10 @@ def sextract(data, mzero, ps, flux_frac=0.5, detect_thresh=1.5,
             
         #Create a string to override default parameters 
         ofile = os.path.join(dirpath, 'output.cat')
-        s = '-PHOT_FLUXFRAC %.3f -MAG_ZEROPOINT %.3f -PIXEL_SCALE %.3f -CATALOG_NAME %s -PARAMETERS_NAME %s -FILTER_NAME %s -DETECT_THRESH %s -DETECT_MINAREA %.5f -DEBLEND_MINCONT %i -CLEAN %s -FILTER %s -BACK_SIZE % i %s' % \
+        s = '-PHOT_FLUXFRAC %.3f -MAG_ZEROPOINT %.3f -PIXEL_SCALE %.3f \
+        -CATALOG_NAME %s -PARAMETERS_NAME %s -FILTER_NAME %s -DETECT_THRESH %\
+        s -DETECT_MINAREA %.5f -DEBLEND_MINCONT %i -CLEAN %s -FILTER %s \
+        -BACK_SIZE % i %s' % \
         (flux_frac, mzero, ps, ofile, param_name, convfile, detect_thresh,
          detect_minarea, deblend_mincont, clean, convolve, bgsize, extras)
         
@@ -115,11 +123,14 @@ def sextract(data, mzero, ps, flux_frac=0.5, detect_thresh=1.5,
                         
         #Read the parameters into a pandas dataframe
         return read_output(ofile), output
-        
 
+#==============================================================================        
+#SExtractor IO
+        
 def write_filter(arr, fname, norm=False):
-    
-    '''Write filter arr to fname for SExtracting'''
+    '''
+    Convert convolution array into SExtractor-readable file.
+    '''
     file = open(fname, 'w')
     if norm:
         arr /= arr.sum()
@@ -133,8 +144,10 @@ def write_filter(arr, fname, norm=False):
     file.close()
     
     
-
 def read_output(filename):
+    '''
+    Read the SExtractor output.
+    '''
     keys = []
     with open(filename, 'r') as f:
         #Get the keys
@@ -156,23 +169,26 @@ def read_output(filename):
         df[keys[i]] = np.array(data[i]).astype('float')
     return df
 
-
-
+#==============================================================================        
+#Geometry
+    
 def ellipses_re(df, radius_key='FLUX_RADIUS'):
     ells = [geometry.Ellipse(a=df[radius_key][i], 
-                             b=(df['B_IMAGE'][i]/df['A_IMAGE'][i])*df[radius_key][i],
-                             theta=(df['THETA_IMAGE'][i])*(np.pi/180)+np.pi/2,
-                             x0=df['X_IMAGE'][i],
-                             y0=df['Y_IMAGE'][i]) for i in range(df.shape[0])]
+                    b=(df['B_IMAGE'][i]/df['A_IMAGE'][i])*df[radius_key][i],
+                    theta=(df['THETA_IMAGE'][i])*(np.pi/180)+np.pi/2,
+                    x0=df['X_IMAGE'][i],
+                    y0=df['Y_IMAGE'][i]) for i in range(df.shape[0])]
     return ells
 
 
-
 class sextractor_ellipse(geometry.Ellipse):
-    '''Child class of ellipse that allows for extra information.'''
+    '''
+    Child class of ellipse that adds some extra information.
+    '''
     def __init__(self, x0, y0, a, b, theta, flux_max=None):
         geometry.Ellipse.__init__(self,x0=x0,y0=y0,a=a,b=b,theta=theta)
         self.flux_max = flux_max
+        
         
 def ellipses_iso(df, uiso, ps, Nthreads=NTHREADS, nfix=None):
     
@@ -186,7 +202,7 @@ def ellipses_iso(df, uiso, ps, Nthreads=NTHREADS, nfix=None):
         
         if nfix is None:
             ns = np.array(pool.starmap(sersic.index_re_kron,
-                                   ((res[i], rks[i]) for i in range(res.size))))
+                                  ((res[i], rks[i]) for i in range(res.size))))
         else:
             ns = np.ones_like(res) * nfix
         
@@ -207,7 +223,6 @@ def ellipses_iso(df, uiso, ps, Nthreads=NTHREADS, nfix=None):
         pool.join()
     
     return ells       
-
 
 
 def get_ellipses(data, uiso, ps, mzero, mask=None, fillval=0, verbose=True,
@@ -243,12 +258,12 @@ def get_ellipses(data, uiso, ps, mzero, mask=None, fillval=0, verbose=True,
     
     #Clean result of nan values
     keepers = np.isfinite([e.a for e in ellipses])
-    keepers *= np.array([e.a > 0 for e in ellipses],dtype='bool')
-    keepers *= dfsex['MAG_AUTO'].as_matrix() < 99
+    keepers&= np.array([e.a>0 for e in ellipses], dtype='bool')
+    #keepers&= dfsex['MAG_AUTO'].values < 99
     
     dfsex2 = pd.DataFrame()
     for col in dfsex.columns.values:
-        dfsex2[col] = dfsex[col].as_matrix()[keepers]
+        dfsex2[col] = dfsex[col].values[keepers]
     ellipses = [e for i, e in enumerate(ellipses) if keepers[i]]
     
     t1 = time.time() - t0
@@ -258,7 +273,8 @@ def get_ellipses(data, uiso, ps, mzero, mask=None, fillval=0, verbose=True,
         return ellipses, dfsex2
     return ellipses
 
-
+#==============================================================================        
+#Masking
 
 def get_mask(data, uiso, ps, mzero, nfix=None, **sexkwargs):
     '''
@@ -277,7 +293,8 @@ def get_mask(data, uiso, ps, mzero, nfix=None, **sexkwargs):
     
     nfix: fix the Sersic index?
     
-    sexkwargs: SExtractor keyword arguments (passed to deepscan.sextractor.sextract)
+    sexkwargs: 
+        SExtractor keyword arguments (passed to deepscan.sextractor.sextract)
     
     Returns
     -------

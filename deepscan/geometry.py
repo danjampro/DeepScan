@@ -5,26 +5,32 @@ Created on Mon Sep 25 11:19:22 2017
 
 @author: danjampro
 """
-
 import numpy as np
 import matplotlib.pyplot as plt
 from shapely.geometry import Point
 from shapely.geometry.polygon import Polygon
 
 #==============================================================================
+#Box class
 
 class Box():
-    
-    def __init__(self, tl,tr,br,bl,frame=None):
+    '''
+    A Box is a four-sided polygon.
+    '''
+    def __init__(self, tl,tr,br,bl,label=None):
         self.tl = tl
         self.tr = tr
         self.br = br
         self.bl = bl
         self.vertices = [tl,tr,br,bl]
-        self.frame=frame
+        self.label=label
         self.polygon = Polygon([self.tl, self.tr, self.br, self.bl])
     
-    def draw(self, ax=None, color='k', frame=False, **kwargs):
+    
+    def draw(self, ax=None, color='k', label=False, **kwargs):
+        '''
+        Plot the Box's boundary.
+        '''
         if ax is None:
             ax = plt.gca()
         ax.plot([self.tl[0],self.tr[0]], [self.tl[1],self.tr[1]],
@@ -35,15 +41,23 @@ class Box():
                                                     color=color, **kwargs)
         ax.plot([self.bl[0],self.tl[0]], [self.bl[1],self.tl[1]],
                                                     color=color, **kwargs)
-        if frame:
-            if self.frame is not None:
-                plt.text(self.tl[0], self.tl[1], s=self.frame, color=color,
-                         fontsize=5)
+        if label:
+            if self.label is not None:
+                plt.text(0.5*(self.tl[0]+self.tr[0]),
+                         0.5*(self.tl[1]+self.bl[1]),s='{}'.format(self.label),
+                         color=color, fontsize=10)
                 
     def check_inside(self, xs, ys):
+        '''
+        Check if (x,y) coordinate pairs are inside the Box.
+        '''
         return np.array([self.polygon.contains(Point(p)) for p in zip(xs,ys)])
     
+    
     def count_inside(self, xs, ys, maskfrac=0):
+        '''
+        Count the number of (x,y) coordinate pairs inside the Box.
+        '''
         return np.sum(self.check_inside(xs, ys)) * (1.-maskfrac)
     
     

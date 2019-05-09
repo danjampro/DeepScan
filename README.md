@@ -17,8 +17,9 @@ See ~/Examples/example_basic.py. Baisc usage Looks like this:
 ```python
 from deepscan.deepscan import DeepScan
 
-data = <your data as 2D np.array>
+#"data" is your data as a 2D np.array.
 result = DeepScan(data) 
+
 ```
 
 **Installation:**

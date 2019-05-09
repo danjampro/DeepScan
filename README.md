@@ -12,7 +12,7 @@ The software is under continual development and any questions or feedback would 
 
 **Basic Usage**
 
-See ~/Examples/example_basic.py. Baisc usage Looks like this:
+See ~/Examples/example_basic.py. Basic usage Looks like this:
 
 ```python
 from deepscan.deepscan import DeepScan

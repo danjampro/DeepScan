@@ -79,5 +79,8 @@ plt.contour(C.segmap_dilate!=0, colors='deepskyblue', linewidths=0.5)
 e0 = geometry.Ellipse(x0=500, y0=500, theta=3*np.pi/4, q=0.7, a=30/ps)
 e0.draw(color='r', linewidth=1, zorder=1, linestyle='--')
 
+#==============================================================================
+#==============================================================================
+
 
 

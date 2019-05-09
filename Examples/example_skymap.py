@@ -5,7 +5,6 @@ Created on Tue Aug 28 18:20:25 2018
 
 @author: danjampro
 """
-
 import numpy as np
 import matplotlib.pyplot as plt
 from deepscan import SB, skymap, remote_data
@@ -18,7 +17,8 @@ mzero = 30 #Magnitude zero point
 data = remote_data.get(1)  #Automatically deleted after download
 
 #Add some sky
-xx, yy = np.meshgrid(np.arange(0,data.shape[0],1.), np.arange(0,data.shape[1],1.))
+xx, yy = np.meshgrid(np.arange(0,data.shape[0],1.),
+                     np.arange(0,data.shape[1],1.))
 xx /= data.shape[1]; yy/= data.shape[1]
 sky0 = SB.SB2Counts(27,ps,mzero) * (xx+yy)
 data += sky0
@@ -58,3 +58,6 @@ plt.subplot(2,2,4)
 plt.imshow(sky)
 plt.xlabel('measured sky')
 plt.tight_layout()
+
+#==============================================================================
+#==============================================================================

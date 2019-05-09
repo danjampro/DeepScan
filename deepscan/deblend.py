@@ -11,7 +11,10 @@ import time
 import numpy as np
 from scipy.ndimage import label, find_objects
 from scipy.ndimage.filters import gaussian_filter
-from scipy.stats import ks_2samp
+from scipy.stats import ks_2samp, distributions
+from scipy.ndimage.morphology import binary_dilation
+
+from . import geometry, source
 
 #==============================================================================
 #Significance tests
@@ -39,11 +42,95 @@ def _KStest(fluxes0, fluxes1, alpha=1E-15):
     d, pval = ks_2samp(fluxes0, fluxes1)
     return (pval < alpha)
 
+
+def _KStest_sorted(fluxes0_sorted, fluxes1, alpha=1E-15):
+    '''
+    Perform a two-sided, two sample KS test at significance level alpha.
+    Using modified code from scipy.stats.ks_2samp.
+    
+    Parameters
+    ----------
+    fluxes0_sorted : 2D float array
+        A sample of flux values sorted in ascending order.
+        
+    fluxes1 : 2D float array
+        A sample of flux values.
+        
+    alpha : float
+        Significance level. Higher values result in more deblended sources.
+        
+    Returns
+    -------
+    bool 
+        True if significant.
+    '''
+    n1 = fluxes0_sorted.shape[0]
+    n2 = fluxes1.shape[0]
+    
+    #Only sort fluxes1
+    fluxes1 = np.sort(fluxes1)
+    
+    #Calculate the statisitics
+    data_all = np.concatenate([fluxes0_sorted,fluxes1])
+    cdf0 = np.searchsorted(fluxes0_sorted,data_all,side='right')/(1.0*n1)
+    cdf1 = (np.searchsorted(fluxes1,data_all,side='right'))/(1.0*n2)
+    d = np.max(np.absolute(cdf0-cdf1))
+    
+    #Note: d absolute not signed distance
+    en = np.sqrt(n1*n2/float(n1+n2))
+    try:
+        pval = distributions.kstwobign.sf((en + 0.12 + 0.11 / en) * d)
+    except:
+        pval = 1.0
+    
+    return (pval < alpha)
+
+#==============================================================================
+#Segment dilation
+    
+def dilate_segment(data, segmap, segID, parentID, copy=False, expand=5):
+    '''
+    Dilate a segment. Only pixels in the parent segment with brightness
+    less than the minimum of the pre-dilated segment can be updated.
+    
+    Parameters
+    ----------
+    data : 2D float array
+        The data.
+        
+    segmap : 2D int array
+        The segmentation image.
+        
+    segID : int
+        The segment ID of the segment to dilate.
+        
+    parentID : int
+        The segment ID of the parent segment.
+        
+    copy : bool
+        Make a copy of the segmentation image?
+        
+    expand : int
+        The size of the dilation kernel.
+    '''    
+    if copy:
+        segmap=segmap.copy()
+      
+    #Do the dilation
+    kernel = geometry.unit_tophat(expand)  
+    dilated = binary_dilation(segmap==segID, structure=kernel)
+    
+    #Update the segmap
+    cond = (dilated>0) & (segmap==parentID) & (data<data[segmap==segID].min())
+    segmap[cond] = segID
+        
+    return segmap
+
 #==============================================================================
 #Deblend algorithm
 
 def deblend(data, bmap, rms, contrast=0.5, minarea=5, alpha=1E-15,
-            Nthresh=32, smooth=1, sky=0, verbose=True):
+            Nthresh=25, smooth=1, sky=0, verbose=True, expand=5):
     '''
     Deblend detected segments using a multi-threshold, bottom-up approach
     inspired by MTObjects (doi:10.1515/mathm-2016-0006).
@@ -90,12 +177,18 @@ def deblend(data, bmap, rms, contrast=0.5, minarea=5, alpha=1E-15,
         
     verbose : bool
         Prints information if True.
+        
+    expand : int
+        Radius of the dilation kernel used in dilate_segment in pixels. If 0
+        or None, no dilation is performed.
     
     Returns
     -------  
-    2D array
-        Deblended segmentation image.
-    
+    2D int array
+        Deblended segmentation image. 
+        
+    List of source.Source objects.
+        Sources corresponding to segments.
     ''' 
     if verbose:
         t0 = time.time()
@@ -108,7 +201,7 @@ def deblend(data, bmap, rms, contrast=0.5, minarea=5, alpha=1E-15,
 
     #Label contiguous regions in the bmap
     structure = np.ones((3,3),dtype='bool')
-    l0, uidmax = label(bmap>0, structure=structure)
+    segmap, uidmax = label(bmap>0, structure=structure)
     if verbose:
         print('-Initial number of segments: %i' % uidmax)
         
@@ -116,23 +209,25 @@ def deblend(data, bmap, rms, contrast=0.5, minarea=5, alpha=1E-15,
     uids = list(range(1, uidmax))
         
     #Slice dict with keys of labels 
-    slices = {_1+1:_2 for _1, _2 in enumerate(find_objects(l0))
-                                                            if _2 is not None}                
+    slices = {_1+1:_2 for _1, _2 in enumerate(find_objects(segmap))
+                                                            if _2 is not None}
+    #Dict containing parent IDs
+    parents = {_:0 for _ in np.arange(1, uidmax+1)}                  
     
     for uid0 in uids: #Loop over existing segments
                         
         #Apply slice to arrays to select labelled region
         slc = slices[uid0]
-        l0_ = l0[slc]
+        segmap_ = segmap[slc]
         data_ = data[slc]
         rms_ = rms[slc]
                         
         #Calculate thresholds for the label
         if Nthresh == 'full':
-            vs = np.unique(data_[l0_==uid0])  #Uses each pixel value (slow)
+            vs = np.unique(data_[segmap_==uid0])  #Uses each pixel value (slow)
         else:
             quantiles = np.linspace(0, 1.0, Nthresh)
-            vs = [np.quantile(data_[l0_==uid0], q) for q in quantiles] 
+            vs = [np.quantile(data_[segmap_==uid0], q) for q in quantiles] 
                     
         if vs[0]==vs[-1]: #One pixel, no deblending
             continue
@@ -142,15 +237,14 @@ def deblend(data, bmap, rms, contrast=0.5, minarea=5, alpha=1E-15,
             uids_ignore = []  #These do not get included in the new segmap
                 
             #Label the new layer
-            l1_, _ = label(data_>=v, structure=structure)
-            l1_[l0_!=uid0] = 0
+            l1_, Nsrc = label( (data_>=v)&(segmap_==uid0), structure=structure)
             uids1 = np.unique(l1_); uids1=uids1[uids1!=0]
             
-            if l1_.max()<2: #At most one source detected (main branch)
+            if Nsrc<2: #At most one source detected (main branch)
                 continue
         
             #This decides which pixels are used for the BG estimate
-            databg = data_[(l0_==uid0) & (l1_==0)]
+            databg = np.sort(data_[(segmap_==uid0) & (l1_==0)])
             
             #Identify main branch
             areas = [np.sum(l1_==_) for _ in uids1]
@@ -178,17 +272,19 @@ def deblend(data, bmap, rms, contrast=0.5, minarea=5, alpha=1E-15,
                     continue                    
                    
                 #Statistical significance condition
-                if not _KStest(databg, data_[cond], alpha=alpha):
+                if not _KStest_sorted(databg, data_[cond], alpha=alpha):
                     uids_ignore.append(uid_)
                     continue
                                                                                      
             #Update the segmap
             uids_update = [_ for _ in uids1 if _ not in uids_ignore]
             cond = np.isin(l1_, uids_update, invert=False)
-            l0[slc][cond] = uidmax + l1_[cond]
+            segmap[slc][cond] = uidmax + l1_[cond]
                     
-            #Update uids
-            uids.extend([uidmax + _ for _ in uids_update])
+            #Update uids & parents
+            for uid_ in uids_update:
+                uids.append(uidmax+uid_)
+                parents[uidmax + uid_] = uid0
         
             #Update slices
             for idx, slc1 in enumerate(find_objects(l1_)):
@@ -198,15 +294,31 @@ def deblend(data, bmap, rms, contrast=0.5, minarea=5, alpha=1E-15,
                             slice(slc1[1].start+slc[1].start,
                                   slc1[1].stop+slc[1].start))
                     slices[idx+1+uidmax] = slc2
-        
+                            
             #Update uidmax
             if len(uids_update) != 0:
                 uidmax = uidmax + np.max(uids_update)
                 
+    #Dilate child segments?           
+    if (expand is not None) & (expand > 0):
+        for segID, parentID in parents.items():
+            if parentID > 0:
+                slc = slices[parentID]                
+                segmap[slc] = dilate_segment(data[slc], segmap[slc], segID,
+                                         parentID, copy=False, expand=expand)
+        
+    #Create source list, including parentID        
+    sources = [source.Source(_1,_2) for _1, _2 in slices.items()]
+    for src in sources:
+        src.series['parentID'] = parents[src.segID]
+                
     if verbose:
         print('-Final number of segments: %i' % (len(uids)))
         print('deblend: finished after %i seconds.' % (time.time()-t0))
-                                                            
-    return l0
+                                 
+    #Return segmap and source list                                   
+    return segmap, sources
 
 #==============================================================================
+#==============================================================================
+

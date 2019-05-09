@@ -276,7 +276,7 @@ def interp_lowmem(points, values, shape_old, shape_new, fillwidth=None,
 
 #==============================================================================
         
-def skymap(data, meshsize, medfiltsize=3, mask=None, method='cubic',
+def skymap(data, meshsize=100, medfiltsize=3, mask=None, method='cubic',
            skyfunc='median', rmsfunc='quantile', lowmem=False, tol=1.03,
            nits=6, getmask=False, fillfrac=0.3, eps=5, kappa=5, thresh=0.5,
            verbose=False):

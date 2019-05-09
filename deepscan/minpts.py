@@ -5,18 +5,27 @@ Created on Tue Oct 24 14:44:46 2017
 
 @author: danjampro
 """
-
 import numpy as np
+from scipy.special import erf
 from . import geometry
 
 #==============================================================================
+#Empirical minpts estimation
 
 def MC_density(data, eps, thresh, rms, N=10000):
+    '''
+    Monte-carlo measurement of point density.
     
-    '''Monte-carlo measurement of point density'''
+    Parameters
+    ----------
     
+    Returns
+    -------
+    
+    '''
     xx, yy = np.meshgrid(np.arange(data.shape[1]), np.arange(data.shape[0]))
-    X, Y = np.meshgrid(np.arange(-int(eps), int(eps)+1), np.arange(-int(eps), int(eps)+1))
+    X, Y = np.meshgrid(np.arange(-int(eps), int(eps)+1), np.arange(-int(eps),
+                                 int(eps)+1))
     cutout = X**2 + Y**2 < eps**2
     results = []
     x0s = []
@@ -33,24 +42,48 @@ def MC_density(data, eps, thresh, rms, N=10000):
         
     return np.array(results), cutout, np.array(x0s), np.array(y0s)
 
+#==============================================================================
+#Statistical minpts estimation
+   
+def _pixels_in_circle(eps):
+    '''
+    Return the number of pixels within an epsilon radius.
+    
+    Parameters
+    ----------
+    
+    Returns
+    -------
+    
+    '''
+    return np.sum(geometry.unit_tophat(eps))
 
 
 def estimate_minpts(kappa, eps, rms, tmin, tmax=np.inf):
     
     '''
-    Calculate number of points required to have confidence kappa of not occuring 
-    due to noise
+    Calculate number of points required to have confidence kappa of not
+    occuring due to noise.
     
-    Paramters
+    Parameters
     ----------
-    kappa: Confidence above noise of core point occurance.
-    rms: RMS level of the data.
-    tmin: Lower brightness threshold.
-    tmax (optional): Upper brightness theshold. Default is np.inf.
-    '''
-    
-    from scipy.special import erf
+    kappa : float
+        Confidence above noise of core point occurance.
         
+    rms : float or 2D array.
+        RMS level of the data.
+        
+    tmin : float
+        Lower brightness threshold.
+        
+    tmax : float
+        Upper brightness theshold. Default is np.inf.
+    
+    Returns
+    -------
+    float
+        The minpts estimate.
+    '''        
     #Probability of a data point lying within threshold
     Pthresh = 0.5 * ( erf(tmax/(np.sqrt(2)*rms)) - erf(tmin/(np.sqrt(2)*rms)) )
     
@@ -68,10 +101,5 @@ def estimate_minpts(kappa, eps, rms, tmin, tmax=np.inf):
     
     return minpts
 
-
-
-def _pixels_in_circle(eps):
-    '''Return the number of pixels within an epsilon radius'''
-    return np.sum(geometry.unit_tophat(eps))
-
+#==============================================================================
 #==============================================================================

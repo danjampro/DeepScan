@@ -10,7 +10,7 @@ from scipy.signal import fftconvolve
 
 #==============================================================================    
 
-def convolve(data, kernel, dtype=None, *args, **kwargs):
+def convolve(data, kernel, dtype=None):
     '''
     Perform FFT convolution. 
     
@@ -25,7 +25,7 @@ def convolve(data, kernel, dtype=None, *args, **kwargs):
     Returns
     -------
     2D float array
-        The convolved array
+        The convolved array.
     '''
     if dtype is None:
         dtype = data.dtype

@@ -5,11 +5,10 @@ Created on Sun Jun  4 13:26:24 2017
 
 @author: Dan
 """
-
 from setuptools import setup
 
 setup(name='deepscan',
-      version='0.53.3',
+      version='0.61',
       description='DeepScan is a source extraction tool designed to identify extended low surface brightness features in large astronomical data.',
       url='https://github.com/danjampro/DeepScan',
       author='danjampro',

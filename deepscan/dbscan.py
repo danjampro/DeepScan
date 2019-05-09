@@ -18,10 +18,20 @@ def ErodeSegmap(segmap, kernel, fft_tol=1E-5):
     
     Parameters
     ----------
+    segmap : 2D int array
+        The segmentation image.
+        
+    kernel : 2D array
+        The kernel to use for the dilation.
+        
+    fft_tol : float
+        The tolerance on the FFT accuracy. Used to surpress artefacts from
+        the FFT.
     
     Returns
     -------
-    
+    2D int array
+        The eroded segmentation image.
     '''        
     #Perform convolution    
     conv = convolution.convolve((segmap==0).astype('float32'), dtype='float32',
@@ -35,13 +45,19 @@ def ErodeSegmap(segmap, kernel, fft_tol=1E-5):
     return conv
 
 #==============================================================================
-
+#Can this class be replaced by a dict?
+    
 class Clustered():
     '''
     Class to house DBSCAN detections.
     '''
     def __init__(self, corepoints, segmap, segmap_dilate, sources,
                  t_dbscan=None, kernel=None):
+        '''
+        Parameters
+        ----------
+        
+        '''
         self.corepoints = corepoints
         self.segmap = segmap
         self.sources = sources
@@ -59,13 +75,34 @@ def _DBSCAN_conv(data, thresh, eps, mpts, erode=True, verbose=True,
     
     Parameters
     ----------
+    data : 2D float array
+        Input data 
+    
+    eps: float
+        Clustering radius in pixels.
+    
+    thresh : float
+        Detection threshold [SNR].
+        
+    mpts : int
+        Minimum number of points within eps for clustering.
+        
+    erode : bool
+        If True, generates the segmap from the segmap_dilate.
+        
+    verbose : bool
+        If True, prints information and timings.
+        
+    fft_tol : float
+        The tolerance on the FFT accuracy. Used to surpress artefacts from
+        the FFT.
     
     Returns
     -------
-    
+    Clustered
+        A Clustered object.   
     '''
     t0 = time.time()
-    #Do some argument checking    
 
     #Create a convolution kernel
     kernel = geometry.unit_tophat(eps)
@@ -81,7 +118,7 @@ def _DBSCAN_conv(data, thresh, eps, mpts, erode=True, verbose=True,
     corepts=convolution.convolve(threshed.astype('float32'), kernel=kernel)
     corepts = (corepts >= mpts-fft_tol) & threshed
     
-    #Recast corepoints to integer (preserves memmap)
+    #Recast corepoints to integer 
     corepts = corepts.astype('int')  
     
     ty = time.time() - t_dbscan_start
@@ -125,12 +162,12 @@ def _DBSCAN_conv(data, thresh, eps, mpts, erode=True, verbose=True,
 
 #==============================================================================
 
-def DBSCAN(data, eps, thresh, rms, verbose=True, mask=None, sky=None,
-           mpts=None, kappa=None, mask_type='rms', *args, **kwargs):
+def DBSCAN(data, rms, eps=5, thresh=0.5, verbose=True, mask=None, sky=0,
+           mpts=None, kappa=5, mask_type='rms', *args, **kwargs):
     '''
     Run DBSCAN.
     
-    Paramters
+    Parameters
     ---------
     data : 2D float array
         Input data 
@@ -152,9 +189,8 @@ def DBSCAN(data, eps, thresh, rms, verbose=True, mask=None, sky=None,
     
     Returns
     -------
-    
-    A Clustered object.
-    
+    Clustered
+        A Clustered object.
     '''
     t0 = time.time()
         
@@ -186,8 +222,8 @@ def DBSCAN(data, eps, thresh, rms, verbose=True, mask=None, sky=None,
     return C
     
 #==============================================================================
-  
-    
+#==============================================================================
+
     
         
 

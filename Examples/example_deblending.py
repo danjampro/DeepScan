@@ -64,7 +64,8 @@ segmap, sources = deblend.deblend(data, bmap, rms, contrast=0.5, minarea=5,
 #==============================================================================
 #Make catalogue using data, segmap and sources
 
-cat = makecat.MakeCat(data, segmap, sources) #This is a pandas.DataFrame
+cat = makecat.MakeCat(data, segmap, sources, sky=sky)
+#This is a pandas.DataFrame
 
 #==============================================================================
 #Summary plot - might take a few seconds

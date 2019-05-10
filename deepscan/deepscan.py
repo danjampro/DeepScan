@@ -41,6 +41,9 @@ def DeepScan(data, verbose=True, makeplots=False, kwargs_skymap={},
         
     kwargs_makecat : dict
         Keyword arguments to be passed to makecat.MakeCat.
+        
+    copy : bool
+        Make a copy of the data for the analysis?
     
     Returns
     -------
@@ -49,10 +52,12 @@ def DeepScan(data, verbose=True, makeplots=False, kwargs_skymap={},
     '''
     #Measure the sky and its RMS
     sky, rms = skymap.skymap(data=data, verbose=verbose, **kwargs_skymap)
+    
+    #Subtract the sky (this makes a new copy of data)
+    data = data-sky
                              
     #Run DBSCAN to identify initial clusters
-    C = dbscan.DBSCAN(data=data, sky=sky, rms=rms, verbose=verbose,
-                      **kwargs_dbscan)
+    C = dbscan.DBSCAN(data=data, rms=rms, verbose=verbose, **kwargs_dbscan)
 
     #Deblend the segmap produced by DBSCAN 
     segmap, sources = deblend.deblend(data=data, bmap=C.segmap, rms=rms,

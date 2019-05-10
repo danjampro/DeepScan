@@ -68,7 +68,7 @@ def _KStest_sorted(fluxes0_sorted, fluxes1, alpha=1E-15):
     n2 = fluxes1.shape[0]
     
     #Only sort fluxes1
-    fluxes1 = np.sort(fluxes1)
+    fluxes1.sort()
     
     #Calculate the statisitics
     data_all = np.concatenate([fluxes0_sorted,fluxes1])
@@ -205,17 +205,21 @@ def deblend(data, bmap, rms, contrast=0.5, minarea=5, alpha=1E-15,
     if verbose:
         print('-Initial number of segments: %i' % uidmax)
         
-    #Find unique labels. This gets appended to following deblending.
-    uids = list(range(1, uidmax))
+    #Unique segIDs. This gets appended to during deblending.
+    uids = list(range(1, uidmax+1))
         
     #Slice dict with keys of labels 
     slices = {_1+1:_2 for _1, _2 in enumerate(find_objects(segmap))
                                                             if _2 is not None}
     #Dict containing parent IDs
-    parents = {_:0 for _ in np.arange(1, uidmax+1)}                  
+    parents = {_:0 for _ in np.arange(1, uidmax+1)}  
+    
+    #Apply minimum area condition to uids (these do not get de-blended)
+    areas0 = [np.sum(segmap[slices[uid]]==uid) for uid in uids]
+    uids = [_1 for _1, _2 in zip(uids, areas0) if _2>=minarea]
     
     for uid0 in uids: #Loop over existing segments
-                        
+                                
         #Apply slice to arrays to select labelled region
         slc = slices[uid0]
         segmap_ = segmap[slc]
@@ -228,27 +232,32 @@ def deblend(data, bmap, rms, contrast=0.5, minarea=5, alpha=1E-15,
         else:
             quantiles = np.linspace(0, 1.0, Nthresh)
             vs = [np.quantile(data_[segmap_==uid0], q) for q in quantiles] 
-                    
-        if vs[0]==vs[-1]: #One pixel, no deblending
-            continue
-        
+                                    
+        #A binary map identifying the parent segment in the slice
+        cond_parent = segmap_==uid0
+                
         for v in vs[1:]:
             
             uids_ignore = []  #These do not get included in the new segmap
                 
             #Label the new layer
-            l1_, Nsrc = label( (data_>=v)&(segmap_==uid0), structure=structure)
-            uids1 = np.unique(l1_); uids1=uids1[uids1!=0]
+            l1_, Nsrc = label( (data_>=v)&(cond_parent), structure=structure)
             
             if Nsrc<2: #At most one source detected (main branch)
                 continue
+                        
+            #List of segIDs to test
+            uids1 = np.arange(1, Nsrc+1)
         
             #This decides which pixels are used for the BG estimate
-            databg = np.sort(data_[(segmap_==uid0) & (l1_==0)])
+            databg = np.sort(data_[cond_parent & (l1_==0)])
             
             #Identify main branch
-            areas = [np.sum(l1_==_) for _ in uids1]
-            uid_mainbranch = uids1[np.argmax(areas)]       
+            areas = np.array([np.sum(l1_==_) for _ in uids1])
+            uid_mainbranch = uids1[areas.argmax()]  
+            
+            #Apply minimum area condition
+            uids1 = uids1[areas>=minarea]
             
             #Apply attribute filtering
             for idx, uid_ in enumerate(uids1): #Loop over new objects
@@ -257,16 +266,9 @@ def deblend(data, bmap, rms, contrast=0.5, minarea=5, alpha=1E-15,
                 if uid_ == uid_mainbranch:
                     uids_ignore.append(uid_)
                     continue
-                
-                cond = l1_==uid_
-                area = areas[idx]
-                                               
-                #Minumum area condition
-                if area < minarea:
-                    uids_ignore.append(uid_)
-                    continue
-                                
+                                                
                 #Mean flux condition (ignore if too faint)
+                cond = l1_==uid_
                 if data_[cond].mean()-v <= rms_[cond].mean() * contrast:
                     uids_ignore.append(uid_)
                     continue                    
@@ -280,6 +282,9 @@ def deblend(data, bmap, rms, contrast=0.5, minarea=5, alpha=1E-15,
             uids_update = [_ for _ in uids1 if _ not in uids_ignore]
             cond = np.isin(l1_, uids_update, invert=False)
             segmap[slc][cond] = uidmax + l1_[cond]
+            
+            #Update parent condition
+            cond_parent &= (~cond)
                     
             #Update uids & parents
             for uid_ in uids_update:

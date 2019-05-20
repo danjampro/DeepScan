@@ -43,17 +43,19 @@ fig, ax = plt.subplots()
 ax.imshow(np.arcsinh(data), cmap='binary', vmin=-0.5, vmax=3)
 
 #Plot ellipses
-for i in range(result['cat'].shape[0]):
-    s = result['cat'].iloc[i]
+for i in range(result['df'].shape[0]):
+    s = result['df'].iloc[i]
     E = geometry.Ellipse(x0=s['xcen'], y0=s['ycen'], a=s['R50'], q=s['q'],
                          theta=s['theta'])
-    E.draw(color='b', linewidth=0.5, ax=ax)
+    E.draw(color='dodgerblue', linewidth=0.5, ax=ax)
 
 #Format
 ax.set_xlim(0, data.shape[1])
 ax.set_ylim(data.shape[0], 0)
 
+plt.show()
 #et voila.
+
 #==============================================================================
 #==============================================================================
 

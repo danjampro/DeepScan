@@ -7,8 +7,10 @@ Created on Wed Oct 18 18:02:27 2017
 
 """
 import time
+import numpy as np
 from scipy.ndimage.measurements import label, find_objects
 from . import minpts, source, geometry, convolution, masking
+from .cython import cy_dbscan
 
 #==============================================================================
 
@@ -37,11 +39,8 @@ def ErodeSegmap(segmap, kernel, fft_tol=1E-5):
     conv = convolution.convolve((segmap==0).astype('float32'), dtype='float32',
                                  kernel=kernel)    
     #Apply threshold                 
-    conv[:,:] = conv <= (1+fft_tol)
+    conv = ( conv <= (1+fft_tol) ).astype('int', copy=False)
         
-    #Apply labels
-    conv[:,:] = conv.astype('int') * segmap
-
     return conv
 
 #==============================================================================
@@ -63,15 +62,15 @@ class Clustered():
         self.sources = sources
         self.segmap_dilate = segmap_dilate
         self.t_dbscan=t_dbscan
-        self.Nobjs = len(sources)
         self.kernel = kernel
         
 #==============================================================================
     
-def _DBSCAN_conv(data, thresh, eps, mpts, erode=True, verbose=True,
-                 fft_tol=1E-5):
+def _DBSCAN_fft(data, thresh, eps, mpts, erode=True, verbose=True,
+                fft_tol=1E-5, get_sources=False, label_segments=True):
     '''
-    Perform DBSCAN clustering using a series of thresholing and convolution.
+    Perform DBSCAN clustering using a series of thresholding and convolution
+    using FFT.
     
     Parameters
     ----------
@@ -116,7 +115,7 @@ def _DBSCAN_conv(data, thresh, eps, mpts, erode=True, verbose=True,
     #Obtain the core points
     t_dbscan_start = time.time()
     corepts=convolution.convolve(threshed.astype('float32'), kernel=kernel)
-    corepts = (corepts >= mpts-fft_tol) & threshed
+    corepts[:, :] = (corepts >= mpts-fft_tol) & threshed
     
     #Recast corepoints to integer 
     corepts = corepts.astype('int')  
@@ -126,44 +125,120 @@ def _DBSCAN_conv(data, thresh, eps, mpts, erode=True, verbose=True,
         print('-corepoints obtained in %i seconds' % ty )
                     
     #Obtain the dilated segments
-    secarea =convolution.convolve(corepts.astype('float32'), kernel=kernel)
-    secarea = (secarea >= 1-fft_tol).astype('int')
+    segmap_dilate =convolution.convolve(corepts.astype('float32'),
+                                        kernel=kernel)
+    segmap_dilate[:,:] = (segmap_dilate >= 1-fft_tol).astype('int')
     t_sec = time.time() - ty - t_dbscan_start
     if verbose: 
         print('-dilated segments obtained in %i seconds.' % t_sec )
                     
     #Do the labeling & get the slices
-    labeled, Nlabels = label(secarea) 
-    corepts[:, :] = corepts * labeled
-    slices = find_objects(labeled)
-    t_labels = time.time()-t_sec-ty-t_dbscan_start
-    if verbose: 
-        print('-segments labeled in %i seconds.' % t_labels )
+    if label_segments:
+        segmap_dilate, Nsegments = label(segmap_dilate) 
+        corepts[:, :] = corepts * segmap_dilate
+        slices = find_objects(segmap_dilate)
+        t_labels = time.time()-t_sec-ty-t_dbscan_start
+        if verbose: 
+            print('-segments labeled in %i seconds.' % t_labels )
+    else:
+        Nsegments = 0
+        slices = None
             
     #Retrieve the Source objects
-    sources = []
-    for i, slice_ in enumerate(slices):
-        sources.append( source.Source( i+1, slice_) )
+    if get_sources:
+        sources = []
+        for i, slice_ in enumerate(slices):
+            sources.append( source.Source( i+1, slice_) )
+    else:
+        sources = None
                 
     #Erode the clusters to get the core points
-    if erode & (Nlabels != 0):
+    if erode & (Nsegments != 0):
         if verbose: 
             t_erode = time.time()-t_sec-ty-t_dbscan_start-t_labels
             print('-segmap eroded in %i seconds' % t_erode)
-        segmap = ErodeSegmap(labeled, kernel=kernel, fft_tol=fft_tol)
+        segmap = ErodeSegmap(segmap_dilate, kernel=kernel, fft_tol=fft_tol)
     else:
         segmap = None
                                                   
     t_dbscan_finish = time.time() - t_dbscan_start
                         
-    C = Clustered(corepoints=corepts, segmap=segmap, segmap_dilate=labeled,
+    C = Clustered(corepoints=corepts,segmap=segmap,segmap_dilate=segmap_dilate,
                   sources=sources, t_dbscan=t_dbscan_finish, kernel=kernel) 
+    return C
+
+
+def _DBSCAN(data, thresh, eps, mpts, erode=True, verbose=True,
+                fft_tol=1E-5, get_sources=False, label_segments=True):
+    '''
+    Perform DBSCAN clustering using a series of thresholding and convolution.
+    
+    Parameters
+    ----------
+    data : 2D float array
+        Input data 
+    
+    eps: float
+        Clustering radius in pixels.
+    
+    thresh : float
+        Detection threshold [SNR].
+        
+    mpts : int
+        Minimum number of points within eps for clustering.
+        
+    erode : bool
+        If True, generates the segmap from the segmap_dilate.
+        
+    verbose : bool
+        If True, prints information and timings.
+        
+    fft_tol : float
+        The tolerance on the FFT accuracy. Used to surpress artefacts from
+        the FFT.
+            
+    Returns
+    -------
+    Clustered
+        A Clustered object.   
+    '''
+    #Create the convolution kernel
+    kernel = geometry.unit_tophat(eps).astype(np.uint8)
+           
+    #Obtain dilated binary map
+    segmap_dilate = cy_dbscan.get_binarymap((data>thresh).astype(np.uint8),
+                                             structure=kernel, minpts=mpts)
+                   
+    #Do the labeling & get the slices
+    if label_segments:
+        segmap_dilate, Nsegments = label(segmap_dilate) 
+        slices = find_objects(segmap_dilate)
+    else:
+        Nsegments = 0
+        slices = None
+            
+    #Retrieve the Source objects
+    if get_sources:
+        sources = []
+        for i, slice_ in enumerate(slices):
+            sources.append( source.Source( i+1, slice_) )
+    else:
+        sources = None
+                
+    #Erode the clusters to get the core points
+    if erode & (Nsegments != 0):
+        segmap = ErodeSegmap(segmap_dilate, kernel=kernel, fft_tol=fft_tol)
+    else:
+        segmap = None
+                                                                          
+    C = Clustered(corepoints=None, segmap=segmap, segmap_dilate=segmap_dilate,
+                  sources=sources, t_dbscan=None, kernel=kernel) 
     return C
 
 #==============================================================================
 
 def DBSCAN(data, rms, eps=5, thresh=0.5, verbose=True, mask=None, sky=0,
-           mpts=None, kappa=5, mask_type='rms', *args, **kwargs):
+           mpts=None, kappa=5, mask_type='rms', use_fft=True, *args, **kwargs):
     '''
     Run DBSCAN.
     
@@ -186,6 +261,9 @@ def DBSCAN(data, rms, eps=5, thresh=0.5, verbose=True, mask=None, sky=0,
     
     mask_type : string 
         'rms' or 'zeros': How should the mask be applied?
+        
+    use_fft : bool
+        Use FFT convolution instead of direct?
     
     Returns
     -------
@@ -213,8 +291,13 @@ def DBSCAN(data, rms, eps=5, thresh=0.5, verbose=True, mask=None, sky=0,
     #DBSCAN clustering
     if verbose: 
         print('dbscan: performing clustering...')
-    C = _DBSCAN_conv(data, thresh=thresh, eps=eps, mpts=mpts, verbose=verbose,
-                     *args, **kwargs)
+        
+    if use_fft:
+        C = _DBSCAN_fft(data, thresh=thresh, eps=eps, mpts=mpts,
+                        verbose=verbose, *args, **kwargs)
+    else:
+        C = _DBSCAN(data, thresh=thresh, eps=eps, mpts=mpts,
+                    verbose=verbose, *args, **kwargs)
     
     if verbose: 
         print('dbscan: finished after %i seconds.' % (time.time()-t0))

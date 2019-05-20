@@ -5,7 +5,6 @@ Created on Wed Nov  1 12:02:08 2017
 
 @author: danjampro
 """
-import numpy as np
 from scipy.signal import fftconvolve
 
 #==============================================================================    
@@ -31,7 +30,7 @@ def convolve(data, kernel, dtype=None):
         dtype = data.dtype
     
     #Do the convolution
-    return fftconvolve(np.array(data), kernel, mode='same').astype(dtype)
+    return fftconvolve(data, kernel, mode='same').astype(dtype, copy=False)
     
 #==============================================================================
 

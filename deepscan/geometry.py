@@ -9,6 +9,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from shapely.geometry import Point
 from shapely.geometry.polygon import Polygon
+from astropy.convolution import Tophat2DKernel
 
 #==============================================================================
 #Box class
@@ -361,7 +362,6 @@ def unit_tophat(radius):
     -------     
 
     '''
-    from astropy.convolution import Tophat2DKernel
     kernel = Tophat2DKernel(radius).array
     kernel[kernel!=0] = 1
     return kernel

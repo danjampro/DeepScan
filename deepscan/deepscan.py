@@ -41,10 +41,7 @@ def DeepScan(data, verbose=True, makeplots=False, kwargs_skymap={},
         
     kwargs_makecat : dict
         Keyword arguments to be passed to makecat.MakeCat.
-        
-    copy : bool
-        Make a copy of the data for the analysis?
-    
+            
     Returns
     -------
     dict
@@ -60,14 +57,13 @@ def DeepScan(data, verbose=True, makeplots=False, kwargs_skymap={},
     C = dbscan.DBSCAN(data=data, rms=rms, verbose=verbose, **kwargs_dbscan)
 
     #Deblend the segmap produced by DBSCAN 
-    segmap, sources = deblend.deblend(data=data, bmap=C.segmap, rms=rms,
-                                      verbose=verbose, **kwargs_deblend)
+    segmap, segments = deblend.deblend(data=data, bmap=C.segmap, rms=rms,
+                                       verbose=verbose, **kwargs_deblend)
 
-    cat = makecat.MakeCat(data=data, segmap=segmap, sources=sources,
-                          verbose=verbose, **kwargs_makecat)
+    df = makecat.MakeCat(data=data, segmap=segmap, segments=segments,
+                         verbose=verbose, **kwargs_makecat)
     
-    return {'cat':cat, 'segmap':segmap, 'sky':sky, 'rms':rms,
-            'sources':sources}
+    return {'df':df, 'segmap':segmap, 'sky':sky, 'rms':rms}
     
 #==============================================================================
 #==============================================================================

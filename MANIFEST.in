@@ -1,2 +1,6 @@
 include README.md
 include LICENSE.md
+include deepscan/cython/*.pyx
+include deepscan/cython/*.pxd
+include deepscan/cython/*.cpp
+include deepscan/cython/*.c

@@ -56,7 +56,7 @@ def _pixels_in_circle(eps):
     -------
     
     '''
-    return np.sum(geometry.unit_tophat(eps))
+    return geometry.unit_tophat(eps).sum()
 
 
 def estimate_minpts(kappa, eps, rms, tmin, tmax=np.inf):

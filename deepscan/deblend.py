@@ -8,6 +8,7 @@ Created on Sun May 13 13:53:45 2018
 Tools to deblend a detection image, avoiding fragmentation of LSB structure.
 """
 import time
+from copy import copy
 import numpy as np
 from scipy.ndimage import label, find_objects
 from scipy.ndimage.filters import gaussian_filter
@@ -15,6 +16,8 @@ from scipy.stats import ks_2samp, distributions
 from scipy.ndimage.morphology import binary_dilation
 
 from . import geometry, source
+
+from .cython.cy_deblend import cy_Label, cy_DeblendSegment, cy_IndilateSegment
 
 #==============================================================================
 #Significance tests
@@ -88,7 +91,7 @@ def _KStest_sorted(fluxes0_sorted, fluxes1, alpha=1E-15):
 #==============================================================================
 #Segment dilation
     
-def dilate_segment(data, segmap, segID, parentID, copy=False, expand=5):
+def dilate_segment(data, segmap, segID, parentID, makecopy=False, expand=5):
     '''
     Dilate a segment. Only pixels in the parent segment with brightness
     less than the minimum of the pre-dilated segment can be updated.
@@ -107,13 +110,13 @@ def dilate_segment(data, segmap, segID, parentID, copy=False, expand=5):
     parentID : int
         The segment ID of the parent segment.
         
-    copy : bool
+    makecopy : bool
         Make a copy of the segmentation image?
         
     expand : int
         The size of the dilation kernel.
     '''    
-    if copy:
+    if makecopy:
         segmap=segmap.copy()
       
     #Do the dilation
@@ -127,10 +130,10 @@ def dilate_segment(data, segmap, segID, parentID, copy=False, expand=5):
     return segmap
 
 #==============================================================================
-#Deblend algorithm
+#Deblend algorithm - slow Python version
 
-def deblend(data, bmap, rms, contrast=0.5, minarea=5, alpha=1E-15,
-            Nthresh=25, smooth=1, sky=0, verbose=True, expand=5):
+def _deblend(data, bmap, rms, contrast=0.5, minarea=5, alpha=1E-15,
+             Nthresh=25, smooth=1, sky=0, verbose=True, expand=5):
     '''
     Deblend detected segments using a multi-threshold, bottom-up approach
     inspired by MTObjects (doi:10.1515/mathm-2016-0006).
@@ -310,7 +313,7 @@ def deblend(data, bmap, rms, contrast=0.5, minarea=5, alpha=1E-15,
             if parentID > 0:
                 slc = slices[parentID]                
                 segmap[slc] = dilate_segment(data[slc], segmap[slc], segID,
-                                         parentID, copy=False, expand=expand)
+                                        parentID,makecopy=False, expand=expand)
         
     #Create source list, including parentID        
     sources = [source.Source(_1,_2) for _1, _2 in slices.items()]
@@ -324,6 +327,133 @@ def deblend(data, bmap, rms, contrast=0.5, minarea=5, alpha=1E-15,
     #Return segmap and source list                                   
     return segmap, sources
 
+
+#==============================================================================
+#A much faster, cython version of _deblend
+    
+def deblend(data, bmap, rms, contrast=0.5, minarea=5, Nthresh=25, smooth=1,
+            sky=0, verbose=True, expand=5, maxdepth=5):
+    '''
+    Deblend detected segments using a multi-threshold, bottom-up approach
+    inspired by MTObjects (doi:10.1515/mathm-2016-0006).
+        
+    Thresholds are calculated using brightness quantiles for each segment.
+    
+    New labels are assigned if a child is statistically significant compared 
+    to its parent. The child with the maximum area assumes the same label as
+    its parent; this preserves extended LSB structure.
+    
+    Parameters
+    ----------
+    data : 2D float array
+        The data array.
+        
+    bmap : 2D array
+        Array marking detected pixels for deblending. Detected pixels have
+        values>0.
+        
+    rms : 2D float array
+        The sky RMS array.
+        
+    sky : 2D float array or float
+        The sky value to subtract from the data, by default 0.
+        
+    contrast : float
+        The minimum mean flux (defined in SNR units using rms) of a child
+        node for it to be considered significant.
+        
+    minarea : int
+        The minumim area (in pixels) for a significant child node.
+                
+    Nthresh : int
+        Number of thresholds applied to each segment for deblending. These are
+        different for each segment and are calculated as evenly spaced data
+        quantiles. If Nthresh='full', uses every pixel value (slow!).
+        
+    smooth : float
+        Width of the Gaussian smoothing kernel to be applied to sky subtracted
+        data. smooth=None for no smoothing.
+        
+    verbose : bool
+        Prints information if True.
+        
+    expand : int
+        Radius of the dilation kernel used in dilate_segment in pixels. If 0
+        or None, no dilation is performed.
+        
+    maxdepth : int
+        Maximum number of nested layers.
+    
+    Returns
+    -------  
+    2D int array
+        Deblended segmentation image. 
+        
+    List of source.Source objects.
+        Sources corresponding to segments.
+    ''' 
+    if verbose:
+        t0 = time.time()
+        print('deblend: deblending...')
+        
+    data = gaussian_filter(data-sky, smooth)
+        
+    segmap, segments = cy_Label(data, bmap.astype(np.uint8))
+    segIDmax = max([s.segID for s in segments])
+    
+    quantiles = np.linspace(0, 1.0, Nthresh)
+    
+    segments_at_depth = copy(segments)
+    
+    depth = 0; finished = False
+    while not finished:
+        
+        finished = True #This needs to be proved wrong to terminate
+        
+        if depth > maxdepth: #Alternatively, terminate if this is True
+            break
+        
+        segments_next_depth = []
+        
+        for segment in segments_at_depth:
+            
+            if segment.area < minarea:
+                continue
+            
+            #Calculate thresholds
+            slc = (slice(segment.ymin,segment.ymax),
+                   slice(segment.xmin,segment.xmax))
+                        
+            cond = segmap[slc] == segment.segID
+            data_ = data[slc][cond]
+            threshes = np.quantile(data_, quantiles)  
+
+            #Apply thresholding to segment            
+            for thresh_ in threshes:
+                segments_, segIDmax = cy_DeblendSegment(data, rms, segmap,
+                                    thresh_, segment, minarea=minarea,
+                                    segIDoffset=segIDmax+1, contrast=contrast) 
+                                
+                if len(segments_) != 0:
+                    segments.extend(segments_)
+                    segments_next_depth.extend(segments_)
+                    finished = False
+        
+        depth += 1
+        segments_at_depth = segments_next_depth
+        
+    #Do the dilations
+    if (expand is not None) and (expand != 0):
+        structure = geometry.unit_tophat(expand).astype(np.uint8)
+        for segment in segments:         
+            if segment.parentID != 0:
+                cy_IndilateSegment(data, segmap, structure, segment)
+    if verbose:
+        print('-Final number of segments: %i' % (len(segments)))
+        print('deblend: finished after %i seconds.' % (time.time()-t0))
+        
+    return segmap, segments
+            
 #==============================================================================
 #==============================================================================
 

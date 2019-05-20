@@ -57,14 +57,14 @@ C = dbscan.DBSCAN(data, eps=5, kappa=5, thresh=0.5, verbose=True, mask=None,
 
 bmap = C.segmap !=0 #Use the segmap produced by DBSCAN for deblending
 
-segmap, sources = deblend.deblend(data, bmap, rms, contrast=0.5, minarea=5,
-                                  alpha=1E-15, Nthresh=25, smooth=1, sky=sky,
-                                  expand=5, verbose=True)
+segmap, segments = deblend.deblend(data, bmap, rms, contrast=0.5, minarea=5,
+                                   Nthresh=25, smooth=1, sky=sky, expand=5,
+                                   verbose=True)
 
 #==============================================================================
 #Make catalogue using data, segmap and sources
 
-cat = makecat.MakeCat(data, segmap, sources, sky=sky)
+df = makecat.MakeCat(data, segmap, segments, sky=sky, ps=ps, magzero=mzero)
 #This is a pandas.DataFrame
 
 #==============================================================================
@@ -89,15 +89,16 @@ plt.contour(segmap,levels = np.unique(segmap[segmap>0]), colors=('r',),
 plt.subplot(1,3,3)
 plt.imshow(SB.Counts2SB(abs(data), ps, mzero), cmap='binary_r', vmax=28,
            vmin=23)
-for i in range(cat.shape[0]):
-    s = cat.iloc[i]
-    E = geometry.Ellipse(x0=s['xcen'], y0=s['ycen'], a=s['R50'], q=s['q'],
+for i in range(df.shape[0]):
+    s = df.iloc[i]
+    E = geometry.Ellipse(x0=s['xcen'], y0=s['ycen'], a=s['R50']/ps, q=s['q'],
                          theta=s['theta'])
     E.draw(color='b', linewidth=0.5, ax=plt.gca())
 plt.gca().set_xlim(0, data.shape[1])
 plt.gca().set_ylim(data.shape[0], 0)
 
 plt.tight_layout()
+plt.show()
 
 #==============================================================================
 #==============================================================================

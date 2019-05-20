@@ -13,6 +13,9 @@ import time
 import numpy as np
 import pandas as pd
 
+from .import SB
+from .cython.cy_makecat import measure_segment
+
 #==============================================================================
 
 def flux(data, segmap, source):
@@ -123,9 +126,10 @@ def fit_ellipse(data, segmap, source, power=2, quantile=None):
             'a_rms':arms, 'b_rms':brms}
     
 #==============================================================================
-#Macro function
-    
-def MakeCat(data, segmap, sources, verbose=True, sky=0):
+#Macro function - uses Cython implementation for speed
+
+def MakeCat(data, segmap, segments, verbose=True, sky=0, ps=None,
+            magzero=None, wcs=None):
     '''
     Produce an output catalogue using measurements based on segments.
     
@@ -137,14 +141,23 @@ def MakeCat(data, segmap, sources, verbose=True, sky=0):
     segmap : 2D int array
         The segmentation image.
         
-    sources : list of source.Source objects
-        The sources corresponding to the segmentation image.
+    segments : list of Segment objects
+        The segments corresponding to the segmentation image.
         
     verbose : bool
         Print information?
         
     sky : float or 2D array of floats
         The sky level.
+        
+    ps : float
+        Pixel size.
+        
+    magzero : float
+        The magnitude zero point.
+        
+    wcs : astropy.wcs.wcs.WCS
+        WCS object for pixel conversions to ra/dec.
     
     Returns
     -------
@@ -206,18 +219,30 @@ def MakeCat(data, segmap, sources, verbose=True, sky=0):
     
     #Subtract the sky     
     data = data - sky
+    
+    #Measure individual segments
+    df = []
+    for segment in segments:
+        df.append( pd.Series(measure_segment(data, segmap, segment)) )    
+    df = pd.concat(df, axis=1).T
+    
+    #Unit conversions & magnitudes
+    if ps is not None:
+        df.loc[:,'R50'] *= ps
+    if magzero is not None:
+        df['mag'] = -2.5*np.log10(df['flux'])
+    if (ps is not None) & (magzero is not None):
+        df['SB50av'] = SB.Counts2SB(df['I50av'], ps=ps, mzero=magzero)
+        df['SB50']   = SB.Counts2SB(df['I50'], ps=ps, mzero=magzero)
         
-    #Do the measurements
-    for src in sources:
-        src.add_measurements(half_light( data, segmap, src))
-        src.add_measurements(fit_ellipse(data, segmap, src))
-        
-    #Make the catalogue
-    df = pd.concat([s.series for s in sources], axis=1).T
+    #World coordinates
+    if wcs is not None:
+        crds = wcs.wcs_pix2world(np.vstack([df['xcen'].values,
+                                            df['ycen'].values]).T, 1)
+        df['ra'] = crds[:,0]; df['dec'] = crds[:,1]
     
     if verbose:
         print('makecat: finished after %i seconds.' % (time.time()-t0))
-        t0 = time.time()
     
     return df
     

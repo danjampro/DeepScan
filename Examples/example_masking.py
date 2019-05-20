@@ -29,7 +29,7 @@ from deepscan import skymap, sextractor, dbscan, SB, geometry, remote_data
 ps = 0.186 #Pixel scale [arcsec per pixel]
 mzero = 30 #Magnitude zero point
 
-data = remote_data.get(1)  #Automatically deleted after download
+data = remote_data.get()  #Automatically deleted after download
 
 plt.figure()  #Show the data using DeepScan's surface brightness transform
 plt.imshow(SB.Counts2SB(abs(data), ps, mzero), cmap='binary_r', vmax=29,
@@ -79,8 +79,12 @@ plt.contour(C.segmap_dilate!=0, colors='deepskyblue', linewidths=0.5)
 e0 = geometry.Ellipse(x0=500, y0=500, theta=3*np.pi/4, q=0.7, a=30/ps)
 e0.draw(color='r', linewidth=1, zorder=1, linestyle='--')
 
+plt.show()
+
 #==============================================================================
 #==============================================================================
+
+
 
 
 

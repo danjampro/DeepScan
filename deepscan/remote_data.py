@@ -8,7 +8,7 @@ Created on Thu Nov  9 13:09:24 2017
 Get some test data from the github repo.
 """
 import tempfile, os, shutil, urllib, gzip
-from . import utils
+from . import utils, __file__
 
 #==============================================================================
 
@@ -26,12 +26,19 @@ def get(i=1):
     2D float array
         The data.
     '''
+    #Check for local data
+    fname = 'testimage%i.fits' % (i)
+    path = os.path.dirname((os.path.dirname(__file__)))
+    fname_full = os.path.join(path, 'data', fname)
+    if os.path.isfile(fname_full):
+        return utils.read_fits(fname_full).astype('float32')
+        
     #Download the data to this directory
     tdir = tempfile.mkdtemp() 
     
     #This is the download ur;
     url = 'https://raw.github.com/danjampro/DeepScan/master/data/'
-    url+= 'testimage%i.fits.gz' % (i)
+    url+= '%s.gz' % (fname)
     
     try:
         #Download the data
@@ -44,7 +51,7 @@ def get(i=1):
             shutil.copyfileobj(f_in, f_out)
             
         #Read into Python
-        data = utils.read_fits(fname)
+        data = utils.read_fits(fname).astype('float32')
         
     finally:        
         #Delete the data on disk

@@ -56,8 +56,6 @@ def measure_segment(data_t[:,:] data, segmap_t[:,:] segmap,
     
     '''
     cdef:
-        #data_t[:,:]   datav = data
-        #segmap_t[:,:] segmapv = segmap
         cppvector[Pixel] pixels
         Py_ssize_t nx, ny, x, y
         segmap_t segID = segment.segID

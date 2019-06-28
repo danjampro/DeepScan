@@ -184,7 +184,7 @@ def cy_DeblendSegment(data_t[:, :] data, rms_t[:, :] rms,segmap_t[:, :] segmap,
     cdef Py_ssize_t x, y, xu, yu, x_, y_, xmin, xmax, ymin, ymax
     cdef segmap_t segIDmax = max(segment.segID, segIDoffset)
     cdef segmap_t segID = segIDmax + 1
-    cdef long area#, segIDroot
+    cdef long area
     cdef long areamax = 0
     cdef long segIDroot = 0
     cdef data_t flux, fluxmin, fluxmax

@@ -26,8 +26,8 @@ def get_binarymap(np.uint8_t[:,:] threshed, np.uint8_t[:,:] structure,
         #np.uint8_t[:, :] threshedv = threshed
         np.uint8_t[:,:]  secareav = secarea
         #np.uint8_t[:,:]  structurev = structure
-        Py_ssize_t       ny = threshed.shape[1]
-        Py_ssize_t       nx = threshed.shape[0]
+        Py_ssize_t       nx = threshed.shape[1]
+        Py_ssize_t       ny = threshed.shape[0]
         Py_ssize_t       nx_ = structure.shape[1]
         Py_ssize_t       ny_ = structure.shape[0]
         Py_ssize_t       x, y, x_, y_

@@ -23,7 +23,6 @@ ctypedef fused data_t:
     
 ctypedef fused mask_t:
     np.uint8_t
-    cppbool
     
 #==============================================================================
 
@@ -78,10 +77,10 @@ cdef class Mesh():
 def measure_sky(data_t[:, :] data, mask_t[:, :] mask, Mesh[:] meshes,
                 double fillfrac=0.33):
     '''
-    
+    Measure the sky and rms for a group of meshes.  
     '''
     cdef:
-        data_t[:] data_
+        #data_t[:] data_
         Mesh mesh
         Py_ssize_t x, y, idx
         double area, sky_, drms_
@@ -92,11 +91,11 @@ def measure_sky(data_t[:, :] data, mask_t[:, :] mask, Mesh[:] meshes,
         dtype = np.float32
     
     for mesh in meshes:
-        
+                
         area = 0
         idx = 0
         data_ = np.empty(mesh.area, dtype=dtype)
-        
+                
         #Get unmasked values
         for x in range(mesh.slc[1].start, mesh.slc[1].stop):
             for y in range(mesh.slc[0].start, mesh.slc[0].stop):
@@ -104,7 +103,7 @@ def measure_sky(data_t[:, :] data, mask_t[:, :] mask, Mesh[:] meshes,
                     area += 1
                     data_[idx] = data[y, x]
                     idx += 1
-                    
+        
         #Ignore if not enough unmasked pixels
         if area / mesh.area < fillfrac:
             mesh.sky = np.nan
@@ -115,14 +114,14 @@ def measure_sky(data_t[:, :] data, mask_t[:, :] mask, Mesh[:] meshes,
             sky_, drms_ = np.quantile(data_[:idx], [0.5, 0.159])
             mesh.sky = sky_
             mesh.rms = sky_ - drms_
-            
+                        
 #==============================================================================
 
 @cython.boundscheck(False)
 @cython.wraparound(False)
 def fill_nans(Mesh[:] meshes, Py_ssize_t ny, Py_ssize_t nx):
     '''
-    
+    Fill nan values in between meshes.
     '''
     cdef:
         Py_ssize_t x, y, x_, y_, idx
@@ -183,7 +182,7 @@ def fill_nans(Mesh[:] meshes, Py_ssize_t ny, Py_ssize_t nx):
 @cython.wraparound(False)
 def apply_median_filter(Mesh[:] meshes,Py_ssize_t nx, Py_ssize_t ny, int dmed):
     '''
-    
+    Apply median filter to a set of meshes, ignoring nan values.
     '''
     cdef:
         Mesh        mesh

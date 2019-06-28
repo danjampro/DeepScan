@@ -12,7 +12,15 @@ import numpy as np
 
 #==============================================================================
 
-USE_CYTHON = True #Use Cython to generate c++ source files?
+if 'develop' in sys.argv:
+    USE_CYTHON = True 
+    ANNOTATE   = True 
+    PROFILE    = True 
+    
+else:
+    USE_CYTHON = False #Use Cython to generate c++ source files?
+    ANNOTATE   = False #Annotate Cython files?
+    PROFILE    = False #Profile Cython code?   
 
 #==============================================================================
 
@@ -34,6 +42,16 @@ def no_cythonize(extensions, **_ignore):
         extension.sources[:] = sources
     return extensions
 
+if USE_CYTHON:
+    try:
+        from Cython.Build import cythonize
+        ext_func = cythonize
+    except ImportError:
+        sys.stderr.write('Cython was not found!\n')
+        sys.exit(-1)
+else:
+    ext_func = no_cythonize
+    
 #==============================================================================
 
 extensions = [
@@ -67,16 +85,6 @@ extensions = [
             ]
  
 #==============================================================================
-
-if USE_CYTHON:
-    try:
-        from Cython.Build import cythonize
-        ext_func = cythonize
-    except ImportError:
-        sys.stderr.write('Cython was not found!\n')
-        sys.exit(-1)
-else:
-    ext_func = no_cythonize
     
 setup(name='deepscan',
       version='0.62',
@@ -96,8 +104,8 @@ extended low surface brightness features in large astronomical datasets.',
           'astropy',
           'shapely'],
       zip_safe=False,
-      ext_modules = ext_func(extensions, annotate=False,
-                             compiler_directives={'profile':False})
+      ext_modules = ext_func(extensions, annotate=ANNOTATE,
+                             compiler_directives={'profile':PROFILE})
       )
 
 #==============================================================================

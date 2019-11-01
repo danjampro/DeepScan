@@ -45,13 +45,13 @@ def make_meshes(shape, meshsize, sky=0, rms=0):
 
 #==============================================================================
 
-def make_mask(data, sky, rms, use_fft=False, **kwargs):
+def make_mask(data, sky, rms, mask=None, use_fft=False, **kwargs):
     '''
     
     '''
     return dbscan.DBSCAN(data-sky, rms=rms, verbose=False, get_sources=False,
                          erode=False, label_segments=False, use_fft=use_fft,
-                         **kwargs).segmap_dilate > 0
+                         mask=mask, **kwargs).segmap_dilate > 0
                          
 #==============================================================================
 
@@ -122,33 +122,34 @@ def skymap(data, meshsize=100, nits=2, kappa=4, eps=5, thresh=0.5,
         mask = mask > 0
         mask2 = mask.copy()
     else:
-        mask2 = np.zeros_like(data, dtype='bool')
-                
+        mask = ~np.isfinite(data)
+        mask2 = mask.copy()
+                        
     for it in range(nits+1):
                 
         #Increment the mask
         if it != 0:
             mask2[:,:] = make_mask(data, sky, rms, kappa=kappa, eps=eps,
-                                   thresh=thresh, use_fft=use_fft)
+                                   thresh=thresh, mask=None, use_fft=use_fft)
             
             mask2 |= np.isnan(sky) #Not needed after fill nans implementation
             if mask is not None:
                 mask2 |= mask #Always apply original mask
-            
+                                            
         #Do the sky estimate, updating the meshes
         measure_sky(data, mask=mask2.astype(np.uint8), meshes=meshes,
                     fillfrac=fillfrac)
-                                
+                                                
         #Apply the median filter if necessary
         if medianfilter:
             apply_median_filter(meshes, nx_, ny_, dmed)
             
         #Update the mesh grids
-        for mesh in meshes:
-            if medianfilter:
+        if medianfilter:
+            for mesh in meshes:   
                 mesh.sky = mesh.sky_
                 mesh.rms = mesh.rms_
-                                            
+                                                            
         #Fill the nans
         if not (np.isfinite([m.sky for m in meshes]).any()) or not (
                 np.isfinite([m.sky for m in meshes]).any()):

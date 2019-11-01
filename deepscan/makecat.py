@@ -15,6 +15,7 @@ import pandas as pd
 
 from .import SB
 from .cython.cy_makecat import measure_segment
+from .cython.cy_deblend import cy_GetSegments
 
 #==============================================================================
 
@@ -128,7 +129,7 @@ def fit_ellipse(data, segmap, source, power=2, quantile=None):
 #==============================================================================
 #Macro function - uses Cython implementation for speed
 
-def MakeCat(data, segmap, segments, verbose=True, sky=0, ps=None,
+def MakeCat(data, segmap, segments=None, verbose=True, sky=0, ps=None,
             magzero=None, wcs=None):
     '''
     Produce an output catalogue using measurements based on segments.
@@ -216,9 +217,13 @@ def MakeCat(data, segmap, segments, verbose=True, sky=0, ps=None,
     if verbose:
         print('makecat: performing measurements...')
         t0 = time.time()
-    
+            
     #Subtract the sky     
     data = data - sky
+    
+    #Get the segments if necessary
+    if segments is None:
+        segments = cy_GetSegments(data, segmap=segmap)
     
     #Measure individual segments
     df = []

@@ -13,8 +13,9 @@ from . import skymap, dbscan, deblend, makecat
 
 #==============================================================================
 
-def DeepScan(data, verbose=True, makeplots=False, kwargs_skymap={},
-             kwargs_dbscan={}, kwargs_deblend={}, kwargs_makecat={}):
+def DeepScan(data, verbose=True, makeplots=False, dilate=False,
+             kwargs_skymap={}, kwargs_dbscan={}, kwargs_deblend={},
+             kwargs_makecat={}):
     '''
     Run the DeepScan pipeline with default arguments, unless otherwise 
     specified.
@@ -29,6 +30,9 @@ def DeepScan(data, verbose=True, makeplots=False, kwargs_skymap={},
         
     makeplots : bool
         Make check plot(s)?
+        
+    dilate : bool
+        Use dilated segmap instead of original?
         
     kwargs_skymap : dict
         Keyword arguments to be passed to skymap.skymap.
@@ -57,7 +61,8 @@ def DeepScan(data, verbose=True, makeplots=False, kwargs_skymap={},
     C = dbscan.DBSCAN(data=data, rms=rms, verbose=verbose, **kwargs_dbscan)
 
     #Deblend the segmap produced by DBSCAN 
-    segmap, segments = deblend.deblend(data=data, bmap=C.segmap, rms=rms,
+    segmap_ = C.segmap_dilate if dilate else C.segmap
+    segmap, segments = deblend.deblend(data=data, bmap=segmap_, rms=rms,
                                        verbose=verbose, **kwargs_deblend)
 
     df = makecat.MakeCat(data=data, segmap=segmap, segments=segments,

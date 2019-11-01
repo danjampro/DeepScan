@@ -87,7 +87,7 @@ extensions = [
 #==============================================================================
     
 setup(name='deepscan',
-      version='0.62',
+      version='0.64',
       description='DeepScan is a source extraction tool designed to identify \
 extended low surface brightness features in large astronomical datasets.',
       url='https://github.com/danjampro/DeepScan',

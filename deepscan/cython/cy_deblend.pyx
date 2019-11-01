@@ -158,6 +158,136 @@ def cy_Label(data_t[:, :] data, bmap_t[:, :] bmap):
     return segmap, segments
 
 
+@cython.boundscheck(False)
+@cython.wraparound(False)
+def cy_GetSegments(data_t[:, :] data, segmap_t[:, :] segmap):
+    '''
+    Make segments from an existing segmap.
+    
+    This function also works for non-contiguous segments.
+    '''
+    cdef Py_ssize_t ny = segmap.shape[0]
+    cdef Py_ssize_t nx = segmap.shape[1]
+    
+    #Make an array to mark visited pixels
+    visited_ = np.zeros((ny, nx), dtype=np.uint8)
+    cdef np.uint8_t[:, :] visited = visited_
+            
+    cdef Py_ssize_t x, y, xu, yu, x_, y_, xmin, xmax, ymin, ymax
+    cdef np.int32_t segID
+    cdef long area
+    cdef double flux, fluxmin, fluxmax
+    
+    #cdef list segments = []
+    cdef dict segdict = {}
+    cdef Segment segment_ 
+    cdef int newsegment
+        
+    cdef Coordinate c, c_    
+    cdef cppqueue[Coordinate] toprocess
+        
+    for y in range(ny):
+        for x in range(nx):
+            
+            #Ignore if not labeled in segmap
+            segID = segmap[y, x]
+            if segID <= 0:
+                continue
+            
+            #Ignore if already visited
+            if visited[y, x] == 1:
+                continue
+            
+            #Else, check if the segment exists already
+            if segID in segdict.keys():
+                
+                newsegment = 0
+                                
+                #Use segment stats as defaults
+                segment_ = segdict[segID]
+                area = segment_.area
+                flux = segment_.flux
+                fluxmin = segment_.fluxmin
+                fluxmax = segment_.fluxmax
+                xmin = segment_.xmin
+                xmax = segment_.xmax
+                ymin = segment_.ymin
+                ymax = segment_.ymax
+                
+            else:
+                
+                newsegment = 1
+                      
+                #Reset the starting values for the new segment                     
+                area = 0
+                flux = 0
+                fluxmin = data[y,x]
+                fluxmax = data[y, x]
+                xmax = 0; ymax = 0
+                ymin = ny; xmin = nx
+    
+            c.x = x; c.y = y
+            toprocess.push( c )
+            
+            #Label the whole cluster
+            while toprocess.size()!=0:
+                                    
+                #Pop a coordinate that needs processing
+                c = toprocess.front()
+                toprocess.pop()
+                xu = c.x; yu = c.y
+                                                                                                                        
+                #Queue neighbours
+                for x_ in range(max((xu-1, 0)), min((xu+2, nx))):
+                    for y_ in range(max((yu-1, 0)), min((yu+2, ny))):
+                        if visited[y_, x_] == 0:
+                            if segmap[y_, x_] == segID:
+                                
+                                #Update the segmap
+                                visited[y_, x_] = 1
+                                
+                                #Update the pixel processing list
+                                c_.x = x_
+                                c_.y = y_
+                                toprocess.push( c_ )
+                                
+                                #Update the segment statistics
+                                xmin = min((xmin, x_))
+                                xmax = max((xmax, x_))
+                                ymin = min((ymin, y_))
+                                ymax = max((ymax, y_))
+                                area += 1
+                                fluxmin = min((fluxmin,
+                                               data[y_, x_]))
+                                fluxmax = max((fluxmax,
+                                               data[y_, x_]))
+                                flux += data[y_, x_]
+                                                                    
+            #Update the existing segment 
+            if newsegment == 0:
+                segment_.area = area
+                segment_.flux = flux
+                segment_.fluxmin = fluxmin
+                segment_.fluxmax = fluxmax
+                segment_.xmin = xmin
+                segment_.xmax = xmax
+                segment_.ymin = ymin
+                segment_.ymax = ymax     
+                
+            #OR create a new segment
+            else:
+                segdict[segID] = Segment(xmin=xmin, xmax=xmax+1,
+                                         ymin=ymin, ymax=ymax+1,
+                                         area=area, flux=flux,
+                                         segID=segID, fluxmin=fluxmin,
+                                         fluxmax=fluxmax)
+                
+    #Return segments sorted by segID
+    keys = np.array(list(segdict.keys()))
+    keys.sort()
+    return [segdict[k] for k in keys]
+
+
 #==============================================================================
 
 @cython.boundscheck(False)

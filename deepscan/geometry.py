@@ -145,6 +145,7 @@ class Ellipse():
         self.x0 = x0
         self.y0 = y0
         self.req = np.sqrt(self.a*self.b)
+        self.area  = np.pi * self.req**2
         
     
     def check_inside(self, x, y):    
@@ -171,7 +172,7 @@ class Ellipse():
         return (A + B) <= 1
         
         
-    def draw(self, ax=None, color='r', pts=100, **kwargs):
+    def draw(self, ax=None, color='r', Npoints=100, **kwargs):
         '''
         Plot the ellipse.
         
@@ -185,7 +186,7 @@ class Ellipse():
         if ax is None:
             ax = plt.gca()
         
-        phi = np.linspace(0, 2*np.pi)
+        phi = np.linspace(0, 2*np.pi, Npoints)
         x = self.a * np.cos(phi) 
         y = self.b * np.sin(phi)
                         
@@ -195,7 +196,20 @@ class Ellipse():
         ax.plot(x2, y2, color=color, **kwargs)
         
         
-    def rescale(self, factor):
+    def get_bounds(self, Npoints):
+        '''
+        Get bounding coordinates of the Ellipse.
+        '''
+        phi = np.linspace(0, 2*np.pi, Npoints+1)[:-1]
+        x = self.a * np.cos(phi) 
+        y = self.b * np.sin(phi)
+                        
+        y2 = x*np.cos(-self.theta) - y*np.sin(-self.theta) + self.y0
+        x2 = y*np.cos(-self.theta) + x*np.sin(-self.theta) + self.x0
+        return x2, y2        
+        
+        
+    def rescale(self, factor, inplace=False):
         '''
         Resize the Ellipse by factor.
         
@@ -206,6 +220,10 @@ class Ellipse():
         -------
         
         '''
+        if inplace:
+            self.a *= 2
+            self.b *= 2
+            return None
         return Ellipse(a=factor*self.a, q=self.q, theta=self.theta, x0=self.x0,
                        y0=self.y0)
         
@@ -233,7 +251,7 @@ class Ellipse():
         
         return radii
                        
-        
+"""       
 def fit_ellipse(xs,ys,weights=None,rms=False,x0=None,y0=None):
     
     '''
@@ -281,7 +299,7 @@ def fit_ellipse(xs,ys,weights=None,rms=False,x0=None,y0=None):
         return Ellipse(x0=x0,y0=y0,a=dmax,b=bmax,theta=theta)
 
     return Ellipse(x0=x0,y0=y0,a=arms,b=brms,theta=theta)
-
+"""
 
 #==============================================================================
 #Anulus class
@@ -290,20 +308,27 @@ class Anulus():
     '''
     
     '''
-    def __init__(self, x0, y0, r1, r2, theta=0, q=1):
+    def __init__(self, x0, y0, a1, a2, theta=0, q=1):
         '''
         Parameters
         ----------
         
         ''' 
-        eas = [Ellipse(x0=x0,y0=y0,a=r,b=q*r,theta=theta
-                                                    ) for r in [r1,r2]]
-        self.e1 = eas[np.argmin([r1,r2])]
-        self.e2 = eas[np.argmax([r1,r2])]
+        self.x0 = x0
+        self.y0 = y0
         
-        self.area = np.pi * ((self.e2.a*self.e2.b) - (self.e1.a*self.e1.b))
+        eas = [Ellipse(x0=x0,y0=y0,a=a,b=q*a,theta=theta
+                                                    ) for a in [a1,a2]]
+        self.e1 = eas[np.argmin([a1,a2])]
+        self.e2 = eas[np.argmax([a1,a2])]
+        
+        self.area1 = self.e1.area
+        self.area2 = self.e2.area - self.area1
+        
+        self.area = self.area2 - self.area1
         
         self.Nobjs = None
+        
         
     def draw(self, ax=None, color='k', **kwargs):
         '''
@@ -321,6 +346,7 @@ class Anulus():
         self.e1.draw(color=color, **kwargs)
         self.e2.draw(color=color, **kwargs)
         
+        
     def check_inside(self, x, y):
         '''
         Plot the ellipse.
@@ -334,6 +360,7 @@ class Anulus():
         '''
         return (~self.e1.check_inside(x, y)) * self.e2.check_inside(x, y)
         
+            
     def count_objects(self, xs, ys):
         '''
         Plot the ellipse.
@@ -347,6 +374,65 @@ class Anulus():
         '''
         self.Nobjs = np.sum(self.check_inside(xs,ys))
         return self.Nobjs
+    
+#==============================================================================
+#Rectangle 
+        
+class Rectangle():
+    '''
+    A class to handle Rectangles.
+    '''
+    def __init__(self, x0=0, y0=0, height=1, width=1):   
+        self.x0 = float(x0)
+        self.y0 = float(y0)
+        self.height = float(height)
+        self.width  = float(width)
+        
+    
+    def check_inside(self, x, y):    
+        '''
+        Return true if point (x, y) lies within Rectangle.
+        
+        Parameters
+        ----------
+        
+        Returns
+        -------
+        
+        '''     
+        cond = x > self.x0-(self.width/2)
+        cond&= x < self.x0+(self.width/2)
+        cond&= y > self.y0-(self.height/2)
+        cond&= y < self.y0+(self.height/2)
+        return cond
+        
+        
+    def draw(self, ax=None, color='r', **kwargs):
+        '''
+        Plot the ellipse.
+        
+        Parameters
+        ----------
+        
+        Returns
+        -------
+        
+        '''
+        if ax is None:
+            ax = plt.gca()
+        ax.plot([self.x0-(self.width/2), self.x0+(self.width/2)],
+                [self.y0-(self.height/2), self.y0-(self.height/2)],
+                color=color, **kwargs)
+        ax.plot([self.x0-(self.width/2), self.x0+(self.width/2)],
+                [self.y0+(self.height/2), self.y0+(self.height/2)],
+                color=color, **kwargs)
+        ax.plot([self.x0-(self.width/2), self.x0-(self.width/2)],
+                [self.y0-(self.height/2), self.y0+(self.height/2)],
+                color=color, **kwargs)
+        ax.plot([self.x0+(self.width/2), self.x0+(self.width/2)],
+                [self.y0-(self.height/2), self.y0+(self.height/2)],
+                color=color, **kwargs)
+        return ax
 
 #==============================================================================
 #kernels

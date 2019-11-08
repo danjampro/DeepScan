@@ -10,6 +10,7 @@ from setuptools import setup
 from distutils.extension import Extension
 import numpy as np
 
+VERSION = '0.65'
 #==============================================================================
 
 if 'develop' in sys.argv:
@@ -87,7 +88,7 @@ extensions = [
 #==============================================================================
     
 setup(name='deepscan',
-      version='0.64',
+      version=VERSION,
       description='DeepScan is a source extraction tool designed to identify \
 extended low surface brightness features in large astronomical datasets.',
       url='https://github.com/danjampro/DeepScan',
